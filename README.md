@@ -1,4 +1,4 @@
-# YakYak — deploy to Cloudflare Pages
+# YakYak — deploy to Cloudflare Pages 
 
 This is a Next.js 14 app: onboarding + dashboard + AI-powered lesson generation,
 with a server-side proxy route (`app/api/claude/route.js`) that keeps your
