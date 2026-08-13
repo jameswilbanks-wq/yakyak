@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Review</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <button class="icon-btn" id="exitBtn">✕</button>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="reviewBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script>
+    let user = null, profile = null, queue = [], idx = 0, reviewedCount = 0, correctCount = 0, revealed = false;
+
+    function renderLoading() {
+      document.getElementById('reviewBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Pulling together what's due…</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderEmpty() {
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('reviewBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <h2 style="font-size:21px;margin:16px 0 6px;">Nothing due yet</h2>
+          <p class="text-dim" style="font-size:13.5px;max-width:280px;">This fills up as you translate and talk — every weak spot gets scheduled to come back here.</p>
+          <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="btn-primary" id="goTranslate">Translate</button>
+            <button class="btn-primary" id="goTalk">Talk</button>
+          </div>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+      document.getElementById('goTranslate').addEventListener('click', () => { window.location.href = 'translate.html'; });
+      document.getElementById('goTalk').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
+    }
+
+    async function loadQueue() {
+      renderLoading();
+      const nowIso = new Date().toISOString();
+      const { data: due } = await db.from('skill_mastery')
+        .select('*')
+        .eq('user_id', user.id)
+        .lte('next_review_at', nowIso)
+        .order('next_review_at', { ascending: true })
+        .limit(10);
+
+      queue = [];
+      for (const row of due || []) {
+        if (row.skill_type === 'grammar') {
+          const { data: gp } = await db.from('grammar_points').select('*').eq('id', row.skill_ref_id).single();
+          if (gp) queue.push({ skillType: 'grammar', skillRefId: row.skill_ref_id, front: gp.label, back: gp.description, sub: 'Grammar' });
+        } else {
+          const { data: vi } = await db.from('vocab_items').select('*').eq('id', row.skill_ref_id).single();
+          if (vi) queue.push({ skillType: 'vocab', skillRefId: row.skill_ref_id, front: vi.target_text, back: vi.native_text, sub: 'Vocab' });
+        }
+      }
+
+      idx = 0; reviewedCount = 0; correctCount = 0;
+      if (!queue.length) renderEmpty(); else renderCard();
+    }
+
+    function renderCard() {
+      revealed = false;
+      const item = queue[idx];
+      document.getElementById('topLabel').textContent = `${idx + 1} of ${queue.length}`;
+      document.getElementById('reviewBody').innerHTML = `
+        <div class="lesson-body">
+          <span class="chip-mini">${item.sub}</span>
+          <div class="card" style="margin-top:14px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:10px;">
+            <p style="font-size:19px;font-weight:800;font-family:var(--font-display);">${item.front}</p>
+            <p class="text-dim" id="backText" style="font-size:14px;display:none;">${item.back}</p>
+          </div>
+          <div id="actionSlot" style="margin-top:20px;"></div>
+        </div>`;
+      renderRevealAction();
+    }
+
+    function renderRevealAction() {
+      document.getElementById('actionSlot').innerHTML = `
+        <button class="btn-primary" id="revealBtn" style="width:100%;justify-content:center;">Reveal →</button>`;
+      document.getElementById('revealBtn').addEventListener('click', () => {
+        revealed = true;
+        document.getElementById('backText').style.display = 'block';
+        renderGradeActions();
+      });
+    }
+
+    function renderGradeActions() {
+      document.getElementById('actionSlot').innerHTML = `
+        <div style="display:flex;gap:10px;">
+          <button class="row-option" id="missedBtn" style="border-color:var(--danger);justify-content:center;"><span style="font-weight:700;color:var(--danger);">✗ Missed it</span></button>
+          <button class="row-option" id="gotBtn" style="border-color:var(--mint);justify-content:center;"><span style="font-weight:700;color:var(--mint);">✓ Got it</span></button>
+        </div>`;
+      document.getElementById('gotBtn').addEventListener('click', () => grade(true));
+      document.getElementById('missedBtn').addEventListener('click', () => grade(false));
+    }
+
+    async function grade(correct) {
+      const item = queue[idx];
+      await recordSkillResult(user.id, item.skillType, item.skillRefId, correct);
+      reviewedCount++;
+      if (correct) correctCount++;
+      if (idx + 1 < queue.length) { idx++; renderCard(); }
+      else finish();
+    }
+
+    async function finish() {
+      const xpEarned = reviewedCount * 5;
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('reviewBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:40px;">🏆</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">Review done</h2>
+          <p class="text-dim" style="font-size:14.5px;">${correctCount} of ${reviewedCount} remembered · +${xpEarned} XP</p>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
+        </div>`;
+
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = profile.last_activity_date === today ? profile.streak
+        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
+      await db.from('profiles').update({
+        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
+      }).eq('id', user.id);
+
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      loadQueue();
+    })();
+  </script>
+</body>
+</html>

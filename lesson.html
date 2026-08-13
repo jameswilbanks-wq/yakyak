@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Lesson</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <button class="icon-btn" id="exitBtn">✕</button>
+      <span class="text-faint" id="lessonTitle" style="font-size:12.5px;"></span>
+    </div>
+    <div id="lessonBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script>
+    let user = null, profile = null, lesson = null, lessonRowId = null;
+    let quizIndex = 0, picked = null, correctCount = 0;
+
+    function renderLoading() {
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Yak is putting your lesson together…</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderError(message) {
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-center error-box">
+          <div style="font-size:30px;">⚠️</div>
+          <p style="font-weight:700;">Couldn't generate your lesson</p>
+          <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">↻ Try again</button>
+        </div>`;
+      document.getElementById('retryBtn').addEventListener('click', loadLesson);
+    }
+
+    async function loadLesson() {
+      renderLoading();
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(EDGE_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+          },
+          body: JSON.stringify({
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            level: profile.current_level,
+            interest: profile.interests[0] || 'daily life',
+          }),
+        });
+        const raw = await res.text();
+        if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        lesson = data.lesson;
+
+        // Cache this generated lesson for reuse
+        const { data: row } = await db.from('lessons').insert({
+          target_language: profile.target_language,
+          native_language: profile.native_language,
+          level: profile.current_level,
+          interest_tag: profile.interests[0] || null,
+          title: lesson.title,
+          intro: lesson.intro,
+          vocab: lesson.vocab,
+          dialogue: lesson.dialogue,
+          quiz: lesson.quiz,
+        }).select('id').single();
+        lessonRowId = row ? row.id : null;
+
+        renderReady();
+      } catch (e) {
+        renderError(e.message || 'Unknown error');
+      }
+    }
+
+    function renderReady() {
+      document.getElementById('lessonTitle').textContent = lesson.title;
+      const tts = langByCode(profile.target_language).tts;
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-body">
+          <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${lesson.intro}</p>
+          <span class="label">New vocabulary</span>
+          <div class="vocab-list" id="vocabList"></div>
+          <span class="label" style="margin-top:22px;display:block;">Mini dialogue</span>
+          <div class="dialogue-box" id="dialogueBox"></div>
+          <button class="btn-primary" id="quizBtn" style="margin-top:26px;width:100%;justify-content:center;">Quick quiz →</button>
+        </div>`;
+
+      document.getElementById('vocabList').innerHTML = lesson.vocab.map((v, i) => `
+        <div class="vocab-row">
+          <button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(v.target)}">🔊</button>
+          <span style="font-weight:700;font-family:var(--font-display);">${v.target}</span>
+          <span class="text-faint">${v.native}</span>
+        </div>`).join('');
+
+      document.getElementById('dialogueBox').innerHTML = lesson.dialogue.map(l => `
+        <div class="dialogue-line${l.speaker === 'A' ? '' : ' b'}">
+          <button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(l.target)}">🔊</button>
+          <div>
+            <div style="font-weight:600;">${l.target}</div>
+            <div class="text-faint" style="font-size:12px;">${l.native}</div>
+          </div>
+        </div>`).join('');
+
+      document.querySelectorAll('[data-speak]').forEach(btn => {
+        btn.addEventListener('click', () => speak(decodeURIComponent(btn.dataset.speak), tts));
+      });
+      document.getElementById('quizBtn').addEventListener('click', () => { quizIndex = 0; picked = null; correctCount = 0; renderQuiz(); });
+    }
+
+    function renderQuiz() {
+      const q = lesson.quiz[quizIndex];
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-body">
+          <span class="text-faint" style="font-size:12px;">Question ${quizIndex + 1} of ${lesson.quiz.length}</span>
+          <h2 style="font-size:21px;margin:8px 0 18px;">${q.question}</h2>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="optionsList"></div>
+          <div id="nextQBtn"></div>
+        </div>`;
+      const list = document.getElementById('optionsList');
+      list.innerHTML = q.options.map((opt, i) => `<button class="option" data-i="${i}">${opt}</button>`).join('');
+      list.querySelectorAll('.option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (picked !== null) return;
+          picked = parseInt(btn.dataset.i);
+          if (picked === q.answerIndex) correctCount++;
+          list.querySelectorAll('.option').forEach(b => {
+            const i = parseInt(b.dataset.i);
+            b.disabled = true;
+            if (i === q.answerIndex) b.classList.add('correct');
+            else if (i === picked) b.classList.add('wrong');
+          });
+          document.getElementById('nextQBtn').innerHTML = `<button class="btn-primary" id="nextBtn" style="margin-top:20px;width:100%;justify-content:center;">${quizIndex + 1 < lesson.quiz.length ? 'Next question' : 'Finish lesson'} →</button>`;
+          document.getElementById('nextBtn').addEventListener('click', () => {
+            if (quizIndex + 1 < lesson.quiz.length) { quizIndex++; picked = null; renderQuiz(); }
+            else finishLesson();
+          });
+        });
+      });
+    }
+
+    async function finishLesson() {
+      const xpEarned = 20 + correctCount * 10;
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:40px;">🏆</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">Lesson complete</h2>
+          <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${correctCount} of ${lesson.quiz.length} correct</p>
+          <button class="btn-primary" id="doneBtn">Back to home →</button>
+        </div>`;
+
+      if (lessonRowId) {
+        await db.from('lesson_completions').insert({
+          user_id: user.id, lesson_id: lessonRowId, score: correctCount, xp_earned: xpEarned,
+        });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = profile.last_activity_date === today ? profile.streak
+        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
+
+      await db.from('profiles').update({
+        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
+      }).eq('id', user.id);
+
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      loadLesson();
+    })();
+  </script>
+</body>
+</html>

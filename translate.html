@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Translate</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <button class="icon-btn" id="exitBtn">✕</button>
+      <span class="text-faint" id="progressLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="translateBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script>
+    let user = null, profile = null, exercises = [], attempts = [];
+    let idx = 0, submitted = false;
+
+    function renderLoading() {
+      document.getElementById('translateBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Yak is building your translation set…</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderError(message) {
+      document.getElementById('translateBody').innerHTML = `
+        <div class="lesson-center error-box">
+          <div style="font-size:30px;">⚠️</div>
+          <p style="font-weight:700;">Couldn't build this set</p>
+          <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">↻ Try again</button>
+        </div>`;
+      document.getElementById('retryBtn').addEventListener('click', loadSet);
+    }
+
+    async function loadSet() {
+      renderLoading();
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(TRANSLATE_GENERATE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            level: profile.current_level,
+            interest: profile.interests[0] || 'daily life',
+          }),
+        });
+        const raw = await res.text();
+        if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.exercises || !data.exercises.length) throw new Error('No exercises returned');
+
+        // Resolve each exercise's grammar point against the shared catalog
+        // (upsert by code) and cache the exercise row itself, so later
+        // weakness tracking (skill_mastery) has something stable to point
+        // at instead of loose text.
+        exercises = [];
+        for (const ex of data.exercises) {
+          const { data: gp } = await db.from('grammar_points')
+            .upsert({
+              target_language: profile.target_language,
+              code: ex.grammarCode,
+              label: ex.grammarLabel,
+              level: profile.current_level,
+              description: ex.grammarDescription,
+            }, { onConflict: 'target_language,code' })
+            .select('id')
+            .single();
+
+          const { data: row } = await db.from('translation_exercises').insert({
+            target_language: profile.target_language,
+            native_language: profile.native_language,
+            level: profile.current_level,
+            source_text: ex.sourceText,
+            source_lang: ex.sourceLang,
+            expected_text: ex.expectedText,
+            grammar_point_id: gp ? gp.id : null,
+            interest_tag: profile.interests[0] || null,
+          }).select('id').single();
+
+          exercises.push({
+            id: row ? row.id : null,
+            grammarPointId: gp ? gp.id : null,
+            grammarLabel: ex.grammarLabel,
+            sourceText: ex.sourceText,
+            sourceLang: ex.sourceLang,
+            expectedText: ex.expectedText,
+          });
+        }
+
+        idx = 0;
+        attempts = [];
+        renderExercise();
+      } catch (e) {
+        renderError(e.message || 'Unknown error');
+      }
+    }
+
+    function renderExercise() {
+      submitted = false;
+      const ex = exercises[idx];
+      const learning = langByCode(profile.target_language);
+      const fromTarget = ex.sourceLang === 'target';
+
+      document.getElementById('progressLabel').textContent = `${idx + 1} of ${exercises.length}`;
+      document.getElementById('translateBody').innerHTML = `
+        <div class="lesson-body">
+          <span class="chip-mini">${fromTarget ? learning.name + ' → ' + profile.native_language : profile.native_language + ' → ' + learning.name}</span>
+          <div class="card" style="margin-top:14px;display:flex;align-items:center;gap:10px;">
+            <button class="icon-btn icon-btn-sm" id="speakBtn" style="${fromTarget ? '' : 'visibility:hidden;'}">🔊</button>
+            <p style="font-size:17px;font-weight:700;font-family:var(--font-display);">${ex.sourceText}</p>
+          </div>
+          <label class="label" style="margin-top:22px;">Your translation</label>
+          <textarea id="answerInput" class="input" rows="3" style="resize:none;" placeholder="Type it here…"></textarea>
+          <button class="btn-primary" id="submitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>Check →</button>
+          <div id="feedbackSlot" style="margin-top:16px;"></div>
+        </div>`;
+
+      if (fromTarget) {
+        document.getElementById('speakBtn').addEventListener('click', () => speak(ex.sourceText, learning.tts));
+      }
+
+      const input = document.getElementById('answerInput');
+      const submitBtn = document.getElementById('submitBtn');
+      input.addEventListener('input', () => { submitBtn.disabled = input.value.trim().length === 0; });
+      submitBtn.addEventListener('click', () => { submitted ? nextExercise() : submitAnswer(); });
+    }
+
+    async function submitAnswer() {
+      const ex = exercises[idx];
+      const input = document.getElementById('answerInput');
+      const submitBtn = document.getElementById('submitBtn');
+      const answer = input.value.trim();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Checking…';
+      input.disabled = true;
+
+      let result;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(TRANSLATE_GRADE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            sourceText: ex.sourceText,
+            expectedText: ex.expectedText,
+            userAnswer: answer,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            grammarLabel: ex.grammarLabel,
+          }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        result = data;
+      } catch (e) {
+        result = { isCorrect: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
+      }
+
+      submitted = true;
+      attempts.push({ exercise: ex, answer, correct: result.isCorrect === true });
+
+      if (ex.id) {
+        await db.from('translation_attempts').insert({
+          user_id: user.id, exercise_id: ex.id, user_answer: answer,
+          is_correct: result.isCorrect === true, feedback: result.feedback || null,
+        });
+      }
+      if (ex.grammarPointId && result.isCorrect !== null) {
+        await recordSkillResult(user.id, 'grammar', ex.grammarPointId, result.isCorrect === true);
+      }
+
+      const box = document.getElementById('feedbackSlot');
+      const good = result.isCorrect;
+      box.innerHTML = `
+        <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
+          <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Nice work' : '✗ Not quite'}</p>
+          <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
+          ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">One good answer: <b style="color:var(--text);">${ex.expectedText}</b></p>` : ''}
+        </div>`;
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = idx + 1 < exercises.length ? 'Next →' : 'Finish set →';
+    }
+
+    function nextExercise() {
+      if (idx + 1 < exercises.length) { idx++; renderExercise(); }
+      else finishSet();
+    }
+
+    async function finishSet() {
+      const correctCount = attempts.filter(a => a.correct).length;
+      const flagged = [...new Map(
+        attempts.filter(a => !a.correct && a.exercise.grammarPointId)
+          .map(a => [a.exercise.grammarPointId, a.exercise.grammarLabel])
+      ).values()];
+      const xpEarned = 15 + correctCount * 8;
+
+      document.getElementById('translateBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:40px;">🏆</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">Set complete</h2>
+          <p class="text-dim" style="font-size:14.5px;">${correctCount} of ${attempts.length} correct</p>
+          ${flagged.length ? `
+            <div class="card" style="margin-top:18px;text-align:left;max-width:340px;">
+              <span class="label">Flagged for review</span>
+              <p class="text-dim" style="font-size:13px;">${flagged.join(', ')}</p>
+              <p class="text-faint" style="font-size:11.5px;margin-top:6px;">These will come back around in your review queue.</p>
+            </div>` : ''}
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
+        </div>`;
+
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = profile.last_activity_date === today ? profile.streak
+        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
+
+      await db.from('profiles').update({
+        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
+      }).eq('id', user.id);
+
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      loadSet();
+    })();
+  </script>
+</body>
+</html>
