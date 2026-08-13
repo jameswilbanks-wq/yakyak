@@ -10,6 +10,7 @@ const ROLEPLAY_SCENARIOS_URL = SUPABASE_URL + "/functions/v1/generate-roleplay-s
 const ROLEPLAY_REPLY_URL = SUPABASE_URL + "/functions/v1/roleplay-reply";
 const INPUT_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-input-passage";
 const GRADE_PRONUNCIATION_URL = SUPABASE_URL + "/functions/v1/grade-pronunciation";
+const EVALUATE_PROGRESS_URL = SUPABASE_URL + "/functions/v1/evaluate-progress";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -142,6 +143,171 @@ async function fetchRecentValues(table, column, targetLanguage, level, limit) {
   } catch (e) {
     return [];
   }
+}
+
+// --- Progress evaluation -------------------------------------------------
+// A 21-tier proficiency scale (Beginner/Intermediate/Advanced within each
+// of the 7 CEFR levels), assessed by AI from actual performance data rather
+// than self-reported at onboarding. Once assessed, it becomes authoritative:
+// profiles.current_level is kept in sync with the tier's base CEFR code, so
+// every generation edge function (which only knows about the 7 base codes)
+// keeps working unchanged.
+const TIER_SUB_KEYS = ['tier.beginner', 'tier.intermediate', 'tier.advanced'];
+const TIERS = LEVELS.flatMap((l, li) => TIER_SUB_KEYS.map((subKey, si) => ({
+  code: `${l.code}.${si + 1}`,
+  baseLevel: l.code,
+  subKey,
+  ordinal: li * 3 + si,
+})));
+
+function tierIndex(code) {
+  const tier = TIERS.find(x => x.code === code);
+  return tier ? tier.ordinal : -1;
+}
+function tierBaseLevel(code) {
+  const tier = TIERS.find(x => x.code === code);
+  return tier ? tier.baseLevel : null;
+}
+function tierLabel(code) {
+  const tier = TIERS.find(x => x.code === code);
+  if (!tier) return code;
+  return `${t(tier.subKey)} ${tier.baseLevel}`;
+}
+
+// Pulls a recent-activity sample (per module, capped and language-scoped)
+// and reduces it to compact stats — counts, accuracy/scores, and which
+// CEFR levels the content itself was generated at — for the AI to reason
+// over. Deliberately approximate (e.g. lesson quizzes are ~3 questions,
+// reading comprehension is 4-7); this feeds a holistic judgment call, not
+// an exact formula.
+async function gatherProgressStats(userId, targetLanguage) {
+  const [lessonsRes, transRes, inputRes, rpRes] = await Promise.all([
+    db.from('lesson_completions').select('score, completed_at, lessons(level, target_language)')
+      .eq('user_id', userId).order('completed_at', { ascending: false }).limit(8),
+    db.from('translation_attempts').select('is_correct, attempted_at, translation_exercises(level, target_language)')
+      .eq('user_id', userId).order('attempted_at', { ascending: false }).limit(10),
+    db.from('input_completions').select('score, pronunciation_avg, completed_at, input_passages(level, target_language)')
+      .eq('user_id', userId).order('completed_at', { ascending: false }).limit(8),
+    db.from('roleplay_sessions').select('goal_completed, grammar_flagged, completed_at, roleplay_scenarios(level, target_language)')
+      .eq('user_id', userId).eq('status', 'completed').order('completed_at', { ascending: false }).limit(8),
+  ]);
+
+  const byLang = (rows, rel) => (rows || []).filter(r => r[rel] && r[rel].target_language === targetLanguage);
+  const levelCounts = (rows, rel) => rows.reduce((acc, r) => {
+    const lvl = r[rel] && r[rel].level;
+    if (lvl) acc[lvl] = (acc[lvl] || 0) + 1;
+    return acc;
+  }, {});
+
+  const lessons = byLang(lessonsRes.data, 'lessons');
+  const translations = byLang(transRes.data, 'translation_exercises');
+  const reading = byLang(inputRes.data, 'input_passages');
+  const roleplay = byLang(rpRes.data, 'roleplay_scenarios');
+
+  return {
+    lessons: {
+      count: lessons.length,
+      avgQuizScoreOutOfApprox3: lessons.length ? +(lessons.reduce((s, r) => s + (r.score || 0), 0) / lessons.length).toFixed(2) : null,
+      levels: levelCounts(lessons, 'lessons'),
+    },
+    translations: {
+      count: translations.length,
+      accuracyPercent: translations.length ? Math.round(100 * translations.filter(r => r.is_correct).length / translations.length) : null,
+      levels: levelCounts(translations, 'translation_exercises'),
+    },
+    reading: {
+      count: reading.length,
+      avgComprehensionScoreOutOfApprox5: reading.length ? +(reading.reduce((s, r) => s + (r.score || 0), 0) / reading.length).toFixed(2) : null,
+      avgPronunciationPercent: (() => {
+        const scored = reading.filter(r => r.pronunciation_avg !== null && r.pronunciation_avg !== undefined);
+        return scored.length ? Math.round(scored.reduce((s, r) => s + r.pronunciation_avg, 0) / scored.length) : null;
+      })(),
+      levels: levelCounts(reading, 'input_passages'),
+    },
+    roleplay: {
+      count: roleplay.length,
+      goalCompletionPercent: roleplay.length ? Math.round(100 * roleplay.filter(r => r.goal_completed).length / roleplay.length) : null,
+      avgGrammarFlagsPerSession: roleplay.length ? +(roleplay.reduce((s, r) => s + ((r.grammar_flagged || []).length), 0) / roleplay.length).toFixed(2) : null,
+      levels: levelCounts(roleplay, 'roleplay_scenarios'),
+    },
+  };
+}
+
+const FIRST_EVAL_MIN_ACTIVITIES = 6;
+const REEVAL_MIN_NEW_ACTIVITIES = 3;
+
+// Call once per completed activity, from any of the 4 modules, right after
+// its own XP/streak update. Bumps the running counters; once there's
+// enough fresh data it silently asks the AI for an honest tier verdict and
+// applies it (updating current_level too, since the tier is authoritative).
+// Returns { leveledUp: true, tierLabel, reasoning } only when this call
+// caused an UP move — the one case worth interrupting the finish screen
+// for. Never throws — evaluation is best-effort and must not block the
+// normal finish flow.
+async function recordActivityAndMaybeEvaluate(user, profile) {
+  const newTotal = (profile.total_activities || 0) + 1;
+  const newSinceAssessment = (profile.activities_since_assessment || 0) + 1;
+  const neverAssessed = !profile.assessed_level;
+  const eligible = neverAssessed ? newTotal >= FIRST_EVAL_MIN_ACTIVITIES : newSinceAssessment >= REEVAL_MIN_NEW_ACTIVITIES;
+
+  if (!eligible) {
+    await db.from('profiles').update({ total_activities: newTotal, activities_since_assessment: newSinceAssessment }).eq('id', user.id);
+    profile.total_activities = newTotal;
+    profile.activities_since_assessment = newSinceAssessment;
+    return null;
+  }
+
+  let result = null;
+  try {
+    const stats = await gatherProgressStats(user.id, profile.target_language);
+    const token = await getAuthToken();
+    const res = await fetch(EVALUATE_PROGRESS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        targetLanguage: langByCode(profile.target_language).name,
+        nativeLanguage: profile.native_language,
+        currentTier: profile.assessed_level || null,
+        stats,
+      }),
+    });
+    const raw = await res.text();
+    const data = JSON.parse(raw);
+    if (res.ok && !data.error && data.tierCode) result = data;
+  } catch (e) { /* best-effort */ }
+
+  const prevTier = profile.assessed_level;
+  const update = { total_activities: newTotal };
+  if (result) {
+    update.activities_since_assessment = 0;
+    update.assessed_level = result.tierCode;
+    update.assessed_reasoning = result.reasoning || null;
+    update.assessed_focus_areas = result.focusAreas || [];
+    update.assessed_at = new Date().toISOString();
+    const base = tierBaseLevel(result.tierCode);
+    if (base) update.current_level = base;
+  } else {
+    // Couldn't get a verdict this time — keep the counter so it retries
+    // on the next completed activity instead of waiting another 3.
+    update.activities_since_assessment = newSinceAssessment;
+  }
+
+  await db.from('profiles').update(update).eq('id', user.id);
+  Object.assign(profile, update);
+
+  if (result && prevTier && tierIndex(result.tierCode) > tierIndex(prevTier)) {
+    return { leveledUp: true, tierLabel: tierLabel(result.tierCode), reasoning: result.reasoning };
+  }
+  return null;
+}
+
+function celebrationHTML(levelUpResult) {
+  return `
+    <div class="card" style="margin-top:18px;background:var(--mint-soft);border-color:var(--mint);text-align:center;">
+      <div style="font-size:34px;">🎉</div>
+      <h3 style="font-size:19px;margin:10px 0 4px;">${t('lvl.congrats', { tier: levelUpResult.tierLabel })}</h3>
+      <p class="text-dim" style="font-size:13.5px;">${levelUpResult.reasoning || ''}</p>
+    </div>`;
 }
 
 // --- DEV MODE ---------------------------------------------------------

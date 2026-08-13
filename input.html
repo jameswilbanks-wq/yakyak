@@ -504,8 +504,10 @@
           <div style="font-size:40px;">🏆</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('in.niceWorkTitle')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('in.understoodOfTotal', { c: compCorrect, t: total })}${avgPron !== null ? ` · ${t('in.pronAvg', { n: avgPron })}` : ''}</p>
+          <div id="levelUpSlot" style="width:100%;"></div>
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('in.backToHome')}</button>
         </div>`;
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
 
       if (passageId) {
         await db.from('input_completions').insert({
@@ -519,8 +521,10 @@
       await db.from('profiles').update({
         xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
       }).eq('id', user.id);
+      profile.xp += xpEarned; profile.streak = newStreak; profile.last_activity_date = today;
 
-      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      const levelUp = await recordActivityAndMaybeEvaluate(user, profile);
+      if (levelUp) document.getElementById('levelUpSlot').innerHTML = celebrationHTML(levelUp);
     }
 
     document.getElementById('exitBtn').addEventListener('click', () => {

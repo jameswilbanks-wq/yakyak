@@ -23,6 +23,32 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
+    function openProgressModal(profile) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      const hasAssessment = !!profile.assessed_level;
+      overlay.innerHTML = `
+        <div class="modal-card">
+          <h2 style="font-size:20px;margin-bottom:4px;">${t('lvl.modalTitle')}</h2>
+          ${hasAssessment ? `
+            <p style="font-weight:800;font-size:17px;margin:10px 0 6px;color:var(--accent-ink);">${tierLabel(profile.assessed_level)}</p>
+            <p class="text-dim" style="font-size:13.5px;line-height:1.5;">${profile.assessed_reasoning || ''}</p>
+            ${(profile.assessed_focus_areas && profile.assessed_focus_areas.length) ? `
+              <p class="label" style="margin-top:16px;">${t('lvl.focusOn')}</p>
+              <ul style="margin:0;padding-left:18px;">
+                ${profile.assessed_focus_areas.map(f => `<li class="text-dim" style="font-size:13px;margin-top:2px;">${f}</li>`).join('')}
+              </ul>` : ''}
+          ` : `
+            <p class="text-dim" style="font-size:13.5px;margin-top:10px;">${t('lvl.gatheringHint')}</p>
+            <p class="text-faint" style="font-size:12px;margin-top:8px;">${t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES })}</p>
+          `}
+          <button class="btn-primary" id="closeProgressModalBtn" style="margin-top:20px;width:100%;justify-content:center;">${t('lvl.close')}</button>
+        </div>`;
+      document.body.appendChild(overlay);
+      document.getElementById('closeProgressModalBtn').addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    }
+
     (async () => {
       const user = await requireAuth();
       if (!user) return;
@@ -56,6 +82,11 @@
           </div>
         </div>
 
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+          <span class="chip-mini" id="tierBadge" style="background:var(--mint-soft);color:var(--mint);"></span>
+          <button class="btn-ghost" id="evaluateBtn">🎯 ${t('lvl.evaluateBtn')}</button>
+        </div>
+
         <div class="card">
           <span class="chip-mini">${t('db.todaysLesson')} · ${profile.daily_minutes} min</span>
           <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.readyWhenYouAre')}</h2>
@@ -86,6 +117,10 @@
         </div>
       `;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(38);
+      document.getElementById('tierBadge').textContent = profile.assessed_level
+        ? tierLabel(profile.assessed_level)
+        : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });
+      document.getElementById('evaluateBtn').addEventListener('click', () => openProgressModal(profile));
       document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'lesson.html'; });
       document.getElementById('startTranslateBtn').addEventListener('click', () => { window.location.href = 'translate.html'; });
       document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
