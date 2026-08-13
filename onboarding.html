@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Let's set up your path</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="center-screen">
+    <div class="step-shell" id="stepShell">
+      <div class="progress-bar" id="progressBar"></div>
+      <div id="stepContent"></div>
+      <div class="step-footer" id="stepFooter"></div>
+    </div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script>
+    const NATIVE_LANGS = ['English', 'Portuguese', 'French', 'German', 'Mandarin', 'Other'];
+    const MOTIVATIONS = ['Travel', 'Relationships', 'Business', 'School', 'Citizenship', 'Conversation', 'Reading books', 'Working abroad'];
+    const TIME_OPTIONS = [
+      { id: 5, label: '5 min', hint: 'A quick daily touch' },
+      { id: 15, label: '15 min', hint: 'Solid daily habit' },
+      { id: 30, label: '30 min', hint: 'Real progress' },
+      { id: 60, label: '60+ min', hint: 'Full immersion' },
+    ];
+    const STYLES = [
+      { id: 'visual', label: 'Visual', desc: 'Images, color, and pattern' },
+      { id: 'reading', label: 'Reading', desc: 'Text, stories, and subtitles' },
+      { id: 'speaking', label: 'Speaking', desc: 'Talking it out loud' },
+      { id: 'listening', label: 'Listening', desc: 'Audio and dialogue' },
+      { id: 'mixed', label: 'Mixed', desc: 'A bit of everything' },
+    ];
+    const INTERESTS = ['Sports', 'Travel', 'Food', 'History', 'Business', 'Technology', 'Gaming', 'Movies', 'Fitness', 'Music', 'Family', 'Animals'];
+
+    const steps = ['name', 'level', 'motivation', 'time', 'style', 'interests'];
+    let stepIndex = 0;
+    let user = null;
+
+    const form = {
+      name: '', native: 'English', learning: null, current: null, target: null,
+      motivations: [], time: null, style: null, interests: [],
+    };
+
+    function valid() {
+      switch (steps[stepIndex]) {
+        case 'name': return form.name.trim().length > 0 && form.learning !== null;
+        case 'level': return form.current && form.target;
+        case 'motivation': return form.motivations.length > 0;
+        case 'time': return form.time !== null;
+        case 'style': return form.style !== null;
+        case 'interests': return form.interests.length >= 3;
+      }
+    }
+
+    function toggleArr(arr, val, max) {
+      const i = arr.indexOf(val);
+      if (i >= 0) { arr.splice(i, 1); return; }
+      if (max && arr.length >= max) return;
+      arr.push(val);
+    }
+
+    function renderProgress() {
+      document.getElementById('progressBar').innerHTML = steps.map((_, i) =>
+        `<div class="progress-seg${i <= stepIndex ? ' filled' : ''}"></div>`).join('');
+    }
+
+    function renderFooter() {
+      const footer = document.getElementById('stepFooter');
+      footer.innerHTML = `
+        ${stepIndex > 0 ? '<button class="btn-ghost" id="backBtn">← Back</button>' : '<span></span>'}
+        <button class="btn-primary" id="nextBtn" ${valid() ? '' : 'disabled'}>${stepIndex === steps.length - 1 ? 'Build my plan' : 'Continue'} →</button>
+      `;
+      if (stepIndex > 0) document.getElementById('backBtn').addEventListener('click', () => { stepIndex--; renderStep(); });
+      document.getElementById('nextBtn').addEventListener('click', onNext);
+    }
+
+    async function onNext() {
+      if (stepIndex === steps.length - 1) {
+        await finishOnboarding();
+        return;
+      }
+      stepIndex++;
+      renderStep();
+    }
+
+    function renderStep() {
+      renderProgress();
+      const content = document.getElementById('stepContent');
+      const s = steps[stepIndex];
+
+      if (s === 'name') {
+        content.innerHTML = `
+          <div id="mascotSlot" style="width:52px;margin-bottom:16px;"></div>
+          <h1 style="font-size:30px;margin-bottom:6px;">Hey! I'm Yak.</h1>
+          <p class="text-dim" style="margin-bottom:28px;font-size:15px;">Let's build your path together — what should I call you?</p>
+          <label class="label">Your name</label>
+          <input id="nameInput" class="input" placeholder="e.g. Alex" style="margin-bottom:24px;" value="${form.name}">
+          <label class="label">Your native language</label>
+          <div class="chip-row" id="nativeChips"></div>
+          <label class="label" style="margin-top:22px;">Language you want to learn</label>
+          <div class="chip-row" id="learningChips"></div>
+          <div id="learningBadge" style="margin-top:20px;"></div>
+        `;
+        document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+        document.getElementById('nameInput').addEventListener('input', e => { form.name = e.target.value; renderFooter(); });
+        const nativeChips = document.getElementById('nativeChips');
+        nativeChips.innerHTML = NATIVE_LANGS.map(l => `<button class="chip${form.native === l ? ' active' : ''}" data-l="${l}">${l}</button>`).join('');
+        nativeChips.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { form.native = b.dataset.l; renderStep(); }));
+        const learningChips = document.getElementById('learningChips');
+        learningChips.innerHTML = LANGUAGES.map(l => `<button class="chip${form.learning?.code === l.code ? ' active' : ''}" data-c="${l.code}">${l.name}</button>`).join('');
+        learningChips.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { form.learning = langByCode(b.dataset.c); renderStep(); }));
+        if (form.learning) {
+          document.getElementById('learningBadge').innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="badge">${form.learning.flag}</span>
+              <span class="text-dim" style="font-size:13.5px;">You're learning <b style="color:var(--text);">${form.learning.name}</b></span>
+            </div>`;
+        }
+      }
+
+      if (s === 'level') {
+        content.innerHTML = `
+          <h1 style="font-size:26px;margin-bottom:8px;">Where are you, and where are you headed?</h1>
+          <p class="text-dim" id="levelHint" style="margin-bottom:4px;font-size:14px;"></p>
+          <div class="card" id="ladderCard" style="padding:18px 18px 6px;margin-top:18px;"></div>
+        `;
+        updateLevelHint();
+        renderLadder(document.getElementById('ladderCard'), {
+          mode: 'select', current: form.current, target: form.target,
+          onSelect: (code) => {
+            if (!form.current) { form.current = code; }
+            else if (!form.target) {
+              const curIdx = LEVELS.findIndex(l => l.code === form.current);
+              const codeIdx = LEVELS.findIndex(l => l.code === code);
+              if (codeIdx <= curIdx) { form.current = code; form.target = null; }
+              else { form.target = code; }
+            } else { form.current = code; form.target = null; }
+            renderStep();
+          }
+        });
+      }
+
+      if (s === 'motivation') {
+        content.innerHTML = `
+          <h1 style="font-size:26px;margin-bottom:8px;">Why ${form.learning?.name || 'this language'}, why now?</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">Choose as many as apply.</p>
+          <div class="grid-3" id="motivGrid"></div>
+        `;
+        const grid = document.getElementById('motivGrid');
+        grid.innerHTML = MOTIVATIONS.map(m => `<button class="tile${form.motivations.includes(m) ? ' active' : ''}" data-m="${m}"><span>${m}</span></button>`).join('');
+        grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { toggleArr(form.motivations, b.dataset.m); renderStep(); }));
+      }
+
+      if (s === 'time') {
+        content.innerHTML = `
+          <h1 style="font-size:26px;margin-bottom:8px;">How much time can you give it daily?</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">We'll size every lesson to fit.</p>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="timeList"></div>
+        `;
+        const list = document.getElementById('timeList');
+        list.innerHTML = TIME_OPTIONS.map(t => `
+          <button class="row-option${form.time === t.id ? ' active' : ''}" data-t="${t.id}">
+            <span style="font-weight:700;font-size:15px;font-family:var(--font-display);">${t.label}</span>
+            <span class="text-faint" style="font-size:12.5px;">${t.hint}</span>
+          </button>`).join('');
+        list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.time = parseInt(b.dataset.t); renderStep(); }));
+      }
+
+      if (s === 'style') {
+        content.innerHTML = `
+          <h1 style="font-size:26px;margin-bottom:8px;">How do you learn best?</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">We'll lean into this, without ignoring the rest.</p>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="styleList"></div>
+        `;
+        const list = document.getElementById('styleList');
+        list.innerHTML = STYLES.map(s => `
+          <button class="row-option${form.style === s.id ? ' active' : ''}" data-s="${s.id}">
+            <span style="font-weight:700;font-size:15px;">${s.label}</span>
+            <span class="text-faint" style="font-size:12.5px;">${s.desc}</span>
+          </button>`).join('');
+        list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.style = b.dataset.s; renderStep(); }));
+      }
+
+      if (s === 'interests') {
+        content.innerHTML = `
+          <h1 style="font-size:26px;margin-bottom:8px;">What do you actually like talking about?</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">Pick 3–6 — every example will be built around these.</p>
+          <div class="grid-4" id="interestGrid"></div>
+        `;
+        const grid = document.getElementById('interestGrid');
+        grid.innerHTML = INTERESTS.map(i => `<button class="tile${form.interests.includes(i) ? ' active' : ''}" data-i="${i}"><span>${i}</span></button>`).join('');
+        grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { toggleArr(form.interests, b.dataset.i, 6); renderStep(); }));
+      }
+
+      renderFooter();
+    }
+
+    function updateLevelHint() {
+      const hint = document.getElementById('levelHint');
+      if (!hint) return;
+      if (!form.current) hint.textContent = 'Tap the level closest to where you are today.';
+      else if (!form.target) hint.innerHTML = `<b style="color:var(--text);">${form.current}</b> is set as your starting point — now tap a level above it for your goal.`;
+      else hint.innerHTML = `Building a plan from <b style="color:var(--text);">${form.current}</b> to <b style="color:var(--text);">${form.target}</b>.`;
+    }
+
+    async function finishOnboarding() {
+      document.getElementById('stepShell').innerHTML = `
+        <div class="fade-slide" style="max-width:380px;">
+          <div id="mascotSlot" style="width:56px;margin:0 auto;"></div>
+          <p style="margin-top:22px;font-size:15.5px;">Building your plan…</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(56);
+
+      // Upsert (not update): in DEV_MODE there's no signup trigger creating
+      // a profiles row ahead of time, so this needs to work whether or not
+      // one already exists. Safe to keep this way after real auth returns.
+      const { error } = await db.from('profiles').upsert({
+        id: user.id,
+        name: form.name,
+        native_language: form.native,
+        target_language: form.learning.code,
+        current_level: form.current,
+        target_level: form.target,
+        daily_minutes: form.time,
+        learning_style: form.style,
+        interests: form.interests,
+        motivations: form.motivations,
+      });
+
+      if (error) {
+        document.getElementById('stepShell').innerHTML = `<p style="color:var(--danger);">Couldn't save your profile: ${error.message}</p>`;
+        return;
+      }
+      window.location.href = 'dashboard.html';
+    }
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      renderStep();
+    })();
+  </script>
+</body>
+</html>

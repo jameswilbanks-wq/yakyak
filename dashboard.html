@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="dash-wrap">
+    <div class="dash-content" id="dashContent">
+      <p class="text-dim">Loading…</p>
+    </div>
+    <div class="bottom-nav">
+      <a class="nav-item active" href="dashboard.html">🏠<span>Home</span></a>
+      <a class="nav-item" href="review.html">📊<span>Progress</span></a>
+      <a class="nav-item" href="roleplay.html">💬<span>Talk</span></a>
+      <button class="nav-item" id="signOutBtn" style="cursor:pointer;">👤<span>Sign out</span></button>
+    </div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script>
+    (async () => {
+      const user = await requireAuth();
+      if (!user) return;
+
+      const profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+
+      const { count: completionCount } = await db
+        .from('lesson_completions').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+
+      const learning = langByCode(profile.target_language);
+      const content = document.getElementById('dashContent');
+      content.innerHTML = `
+        <div class="dash-header">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div id="mascotSlot" style="width:38px;"></div>
+            <div>
+              <h1 style="font-size:22px;">${greeting()}, ${profile.name}.</h1>
+              <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level} · ${profile.daily_minutes} min/day</p>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <div class="stat-pill">🔥 <span>${profile.streak}</span></div>
+            <div class="stat-pill">✨ <span>${profile.xp}</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="chip-mini">Today's lesson · ${profile.daily_minutes} min</span>
+          <h2 style="font-size:22px;margin:8px 0 4px;">Ready when you are</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">A fresh lesson in ${learning.name}, built around ${profile.interests[0] || 'your interests'}.</p>
+          <button class="btn-primary" id="startLessonBtn">Start lesson →</button>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">Translate &amp; diagnose</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">Translate &amp; catch weak spots</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">Six quick sentences, both directions — we'll flag what needs review.</p>
+          <button class="btn-primary" id="startTranslateBtn">Start translating →</button>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <span class="chip-mini">Listen &amp; read</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">Comprehensible input</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">A short passage at your level, then a quick check on what stuck.</p>
+          <button class="btn-primary" id="startInputBtn">Start reading/listening →</button>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
+            <span class="label" style="margin-bottom:0;">Your path</span>
+            <span class="text-faint" style="font-size:11px;">${completionCount || 0} lessons completed</span>
+          </div>
+          <div id="ladderSlot"></div>
+        </div>
+      `;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(38);
+      document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'lesson.html'; });
+      document.getElementById('startTranslateBtn').addEventListener('click', () => { window.location.href = 'translate.html'; });
+      document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
+      renderLadder(document.getElementById('ladderSlot'), {
+        mode: 'display', current: profile.current_level, target: profile.target_level, compact: true, progress: 40,
+      });
+
+      const signOutBtn = document.getElementById('signOutBtn');
+      if (DEV_MODE) {
+        signOutBtn.disabled = true;
+        signOutBtn.style.opacity = '.35';
+        signOutBtn.title = 'Login comes later in the build';
+      } else {
+        signOutBtn.addEventListener('click', async () => {
+          await db.auth.signOut();
+          window.location.href = 'login.html';
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
