@@ -144,6 +144,36 @@ async function recordSkillResult(userId, skillType, skillRefId, correct) {
   }, { onConflict: 'user_id,skill_type,skill_ref_id' });
 }
 
+// Shared by lesson.html's dialogue quiz, translate.html, and input.html's
+// comprehension check — all three grade translations via grade-translation,
+// which optionally returns { grammarCode, grammarLabel, grammarLesson } when
+// a wrong answer traces back to a specific, teachable grammar pattern. This
+// persists that pattern into the same grammar_points + skill_mastery tables
+// roleplay.html's corrections use, so it surfaces later in spaced-repetition
+// review, and returns the small "quick lesson" card HTML to inject inline.
+async function saveGrammarLesson(userId, targetLanguage, level, result) {
+  if (!result || !result.grammarCode || !result.grammarLabel || !result.grammarLesson) return;
+  const { data: gp } = await db.from('grammar_points')
+    .upsert({
+      target_language: targetLanguage,
+      code: result.grammarCode,
+      label: result.grammarLabel,
+      level: level,
+      description: result.grammarLesson,
+    }, { onConflict: 'target_language,code' })
+    .select('id').single();
+  if (gp) await recordSkillResult(userId, 'grammar', gp.id, false);
+}
+
+function grammarLessonHTML(result) {
+  if (!result || !result.grammarLesson) return '';
+  return `
+    <div class="card" style="margin-top:14px;">
+      <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);margin-bottom:8px;">${t('gl.quickLesson')}${result.grammarLabel ? ' · ' + result.grammarLabel : ''}</span>
+      <p class="text-dim" style="font-size:13px;line-height:1.5;">${result.grammarLesson}</p>
+    </div>`;
+}
+
 function mascotHTML(size) {
   size = size || 40;
   return `<div class="mascot" style="width:${size}px;height:${size}px;">

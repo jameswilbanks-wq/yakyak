@@ -192,7 +192,9 @@
           <p style="font-weight:800;">${good === null ? t('tr.skipped') : good ? t('tr.niceWork') : t('tr.notQuite')}</p>
           <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
           ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">${t('tr.oneGoodAnswer')} <b style="color:var(--text);">${ex.expectedText}</b></p>` : ''}
-        </div>`;
+        </div>
+        ${grammarLessonHTML(result)}`;
+      saveGrammarLesson(user.id, profile.target_language, profile.current_level, result);
 
       submitBtn.disabled = false;
       submitBtn.textContent = idx + 1 < exercises.length ? t('tr.next') : t('tr.finishSet');

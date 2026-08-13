@@ -474,7 +474,9 @@
             <p style="font-weight:800;">${good === null ? t('in.skipped') : good ? t('in.gotIt') : t('in.notQuite')}</p>
             <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
             <p class="text-faint" style="font-size:12px;margin-top:8px;">${t('in.fullMeaning')} <b style="color:var(--text);">${sentence.native}</b></p>
-          </div>`;
+          </div>
+          ${grammarLessonHTML(result)}`;
+        saveGrammarLesson(user.id, profile.target_language, profile.current_level, result);
 
         submitBtn.disabled = false;
         submitBtn.textContent = sIdx + 1 < passage.sentences.length ? t('in.nextSentence') : t('in.finish');
