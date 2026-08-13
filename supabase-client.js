@@ -311,18 +311,11 @@ function celebrationHTML(levelUpResult) {
 }
 
 // --- DEV MODE ---------------------------------------------------------
-// Login is deferred until later in the build. Every page that would
-// normally require a signed-in user instead gets this one fixed mock
-// user, so profiles/lessons/completions all key off a stable id.
-//
-// To turn real auth back on later:
-//   1. Set DEV_MODE = false below.
-//   2. Confirm the DB trigger (or an upsert) creates a profiles row for
-//      every new signed-up user — onboarding.html now upserts, so it
-//      works either way.
-//   3. Make sure RLS policies on profiles/lessons/lesson_completions are
-//      scoped back to auth.uid() = id instead of allowing the mock id.
-const DEV_MODE = true;
+// Real auth (email + one-time code, see login.html) is now live. This
+// flag and the mock user are kept around only in case we need to flip
+// back to single-user dev mode temporarily; every page already calls
+// requireAuth()/getAuthToken(), which do the right thing either way.
+const DEV_MODE = false;
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 const MOCK_USER = { id: MOCK_USER_ID, email: 'dev@yakyak.local' };
 

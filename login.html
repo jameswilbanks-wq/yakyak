@@ -12,69 +12,84 @@
     <div class="fade-slide" style="width:100%;max-width:380px;">
       <div id="mascotSlot" style="margin:0 auto 16px;width:52px;"></div>
       <h1 style="font-size:28px;margin-bottom:6px;">Hey! I'm Yak.</h1>
-      <p class="text-dim" id="subhead" style="margin-bottom:28px;font-size:15px;">Sign in to keep learning.</p>
+      <p class="text-dim" id="subhead" style="margin-bottom:28px;font-size:15px;"></p>
 
-      <label class="label">Email</label>
-      <input id="email" type="email" class="input" placeholder="you@example.com" style="margin-bottom:16px;">
+      <div id="emailStep">
+        <label class="label" id="emailLabel">Email</label>
+        <input id="email" type="email" class="input" style="margin-bottom:16px;" autocomplete="email">
+        <p id="emailError" class="text-dim" style="color:var(--danger);font-size:13px;min-height:18px;margin:0 0 8px;"></p>
+        <button id="sendLinkBtn" class="btn-primary" style="width:100%;justify-content:center;">Send me a sign-in link</button>
+      </div>
 
-      <label class="label">Password</label>
-      <input id="password" type="password" class="input" placeholder="••••••••" style="margin-bottom:8px;">
-
-      <p id="errorMsg" class="text-dim" style="color:var(--danger);font-size:13px;min-height:18px;margin:8px 0;"></p>
-
-      <button id="submitBtn" class="btn-primary" style="width:100%;justify-content:center;margin-top:12px;">
-        Sign in
-      </button>
-
-      <p class="text-dim" style="text-align:center;margin-top:20px;font-size:13.5px;">
-        <span id="toggleText">New here?</span>
-        <button id="toggleMode" class="btn-ghost" style="display:inline;padding:0;text-decoration:underline;">Create an account</button>
-      </p>
+      <div id="sentStep" style="display:none;">
+        <div class="card" style="text-align:center;">
+          <div style="font-size:30px;">📬</div>
+          <p class="text-dim" id="checkEmailMsg" style="margin-top:10px;font-size:14px;"></p>
+        </div>
+        <p style="text-align:center;margin-top:18px;">
+          <button id="resendBtn" class="btn-ghost" style="display:inline;padding:0;text-decoration:underline;font-size:13px;">Resend</button>
+          <span style="margin:0 6px;color:var(--text-faint);">·</span>
+          <button id="backBtn" class="btn-ghost" style="display:inline;padding:0;text-decoration:underline;font-size:13px;">Use a different email</button>
+        </p>
+      </div>
     </div>
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    document.getElementById('subhead').textContent = t('lg.subtitle');
+    document.getElementById('emailLabel').textContent = t('lg.emailLabel');
+    document.getElementById('email').placeholder = t('lg.emailPlaceholder');
+    document.getElementById('sendLinkBtn').textContent = t('lg.sendLink');
+    document.getElementById('resendBtn').textContent = t('lg.resend');
+    document.getElementById('backBtn').textContent = t('lg.useAnotherEmail');
 
-    let mode = 'signin'; // or 'signup'
+    let currentEmail = '';
+
     const emailEl = document.getElementById('email');
-    const passwordEl = document.getElementById('password');
-    const errorEl = document.getElementById('errorMsg');
-    const submitBtn = document.getElementById('submitBtn');
-    const toggleBtn = document.getElementById('toggleMode');
-    const toggleText = document.getElementById('toggleText');
-    const subhead = document.getElementById('subhead');
+    const emailError = document.getElementById('emailError');
+    const sendLinkBtn = document.getElementById('sendLinkBtn');
+    const emailStep = document.getElementById('emailStep');
+    const sentStep = document.getElementById('sentStep');
+    const checkEmailMsg = document.getElementById('checkEmailMsg');
+    const resendBtn = document.getElementById('resendBtn');
+    const backBtn = document.getElementById('backBtn');
 
-    toggleBtn.addEventListener('click', () => {
-      mode = mode === 'signin' ? 'signup' : 'signin';
-      submitBtn.textContent = mode === 'signin' ? 'Sign in' : 'Create account';
-      toggleText.textContent = mode === 'signin' ? 'New here?' : 'Already have an account?';
-      toggleBtn.textContent = mode === 'signin' ? 'Create an account' : 'Sign in instead';
-      subhead.textContent = mode === 'signin' ? 'Sign in to keep learning.' : "Let's get your account set up.";
-      errorEl.textContent = '';
-    });
+    function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
-    submitBtn.addEventListener('click', async () => {
+    async function sendLink() {
       const email = emailEl.value.trim();
-      const password = passwordEl.value;
-      if (!email || !password) { errorEl.textContent = 'Enter an email and password.'; return; }
-      submitBtn.disabled = true;
-      errorEl.textContent = '';
-
+      emailError.textContent = '';
+      if (!isValidEmail(email)) { emailError.textContent = t('lg.errorEmail'); return; }
+      currentEmail = email;
+      sendLinkBtn.disabled = true;
+      sendLinkBtn.textContent = t('lg.sending');
       try {
-        if (mode === 'signup') {
-          const { error } = await db.auth.signUp({ email, password });
-          if (error) throw error;
-        } else {
-          const { error } = await db.auth.signInWithPassword({ email, password });
-          if (error) throw error;
-        }
-        window.location.href = 'index.html';
+        const { error } = await db.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + '/index.html' },
+        });
+        if (error) throw error;
+        checkEmailMsg.textContent = t('lg.checkEmailLink', { email: currentEmail });
+        emailStep.style.display = 'none';
+        sentStep.style.display = 'block';
       } catch (e) {
-        errorEl.textContent = e.message || 'Something went wrong.';
-        submitBtn.disabled = false;
+        emailError.textContent = e.message || t('lg.errorGeneric');
+      } finally {
+        sendLinkBtn.disabled = false;
+        sendLinkBtn.textContent = t('lg.sendLink');
       }
+    }
+
+    sendLinkBtn.addEventListener('click', sendLink);
+    emailEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendLink(); });
+    resendBtn.addEventListener('click', sendLink);
+    backBtn.addEventListener('click', () => {
+      sentStep.style.display = 'none';
+      emailStep.style.display = 'block';
+      emailError.textContent = '';
     });
   </script>
 </body>
