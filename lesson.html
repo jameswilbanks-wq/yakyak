@@ -19,7 +19,7 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
-    let user = null, profile = null, lesson = null, lessonRowId = null;
+    let user = null, profile = null, lesson = null, lessonRowId = null, sessionTopic = null;
     let quizIndex = 0, picked = null, correctCount = 0;
     let dqIdx = 0, dqResults = [], dqSubmitted = false;
 
@@ -46,6 +46,7 @@
     async function loadLesson() {
       renderLoading();
       try {
+        const avoid = await fetchRecentValues('lessons', 'title', profile.target_language, profile.current_level, 5);
         const token = await getAuthToken();
         const res = await fetch(EDGE_FUNCTION_URL, {
           method: 'POST',
@@ -57,7 +58,9 @@
             targetLanguage: langByCode(profile.target_language).name,
             nativeLanguage: profile.native_language,
             level: profile.current_level,
-            interest: profile.interests[0] || 'daily life',
+            interest: sessionTopic || 'daily life',
+            angle: randomAngle(),
+            avoid,
           }),
         });
         const raw = await res.text();
@@ -71,7 +74,7 @@
           target_language: profile.target_language,
           native_language: profile.native_language,
           level: profile.current_level,
-          interest_tag: profile.interests[0] || null,
+          interest_tag: sessionTopic || null,
           title: lesson.title,
           intro: lesson.intro,
           vocab: lesson.vocab,
@@ -306,7 +309,15 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
-      loadLesson();
+      document.getElementById('lessonTitle').textContent = '';
+      renderTopicPicker(document.getElementById('lessonBody'), {
+        initial: getLastTopics(profile),
+        onStart: async (selection) => {
+          await saveLastTopics(user.id, selection);
+          sessionTopic = pickTopicForSession(selection);
+          loadLesson();
+        },
+      });
     })();
   </script>
 </body>

@@ -46,6 +46,104 @@ function langByCode(code) {
   return LANGUAGES.find(l => l.code === code) || LANGUAGES[0];
 }
 
+// --- Topics ------------------------------------------------------------
+// Shared by the per-session topic picker on lesson.html, translate.html,
+// input.html, and roleplay.html (formerly a one-time onboarding question).
+const INTERESTS = [
+  { id: 'Sports', key: 'int.sports' }, { id: 'Travel', key: 'int.travel' }, { id: 'Food', key: 'int.food' },
+  { id: 'History', key: 'int.history' }, { id: 'Business', key: 'int.business' }, { id: 'Technology', key: 'int.technology' },
+  { id: 'Gaming', key: 'int.gaming' }, { id: 'Movies', key: 'int.movies' }, { id: 'Fitness', key: 'int.fitness' },
+  { id: 'Music', key: 'int.music' }, { id: 'Family', key: 'int.family' }, { id: 'Animals', key: 'int.animals' },
+];
+
+// A sentinel stored in profiles.interests (repurposed — no schema change)
+// to mean "last time, they picked Surprise Me" rather than specific topics.
+const SURPRISE_SENTINEL = '__surprise__';
+
+// Random settings/angles injected into every generation call so the same
+// topic doesn't produce the same scenario every time (e.g. "Food" at a
+// bus stop reads very differently from "Food" at a birthday party).
+const SCENARIO_ANGLES = [
+  'at a bus stop', 'during a rainstorm', 'at a birthday party', 'in a kitchen', 'on a phone call',
+  'at a job interview', 'while waiting in line', 'at a family dinner', 'on a train', 'at a market stall',
+  'during a power outage', 'at a neighbor\'s door', 'in a waiting room', 'on a morning walk',
+  'at a school reunion', 'while packing for a trip',
+];
+function randomAngle() { return SCENARIO_ANGLES[Math.floor(Math.random() * SCENARIO_ANGLES.length)]; }
+
+// Reads the learner's last topic picks out of profiles.interests. Returns
+// { topics: string[], surprise: boolean } — surprise true means the array
+// held only the sentinel (or was empty and there's nothing to prefill).
+function getLastTopics(profile) {
+  const raw = (profile && profile.interests) || [];
+  if (raw.length === 1 && raw[0] === SURPRISE_SENTINEL) return { topics: [], surprise: true };
+  return { topics: raw.filter(id => id !== SURPRISE_SENTINEL), surprise: false };
+}
+
+// Persists this session's picks so the picker opens pre-checked next time.
+async function saveLastTopics(userId, selection) {
+  const value = selection.surprise ? [SURPRISE_SENTINEL] : selection.topics;
+  await db.from('profiles').update({ interests: value }).eq('id', userId);
+}
+
+// Picks ONE topic to actually use for a single generation call. Surprise
+// Me draws from the full catalog; a multi-topic pick draws one at random
+// each time, so revisiting the same picks still varies lesson to lesson.
+function pickTopicForSession(selection) {
+  const pool = selection.surprise ? INTERESTS.map(i => i.id) : selection.topics;
+  if (!pool.length) return 'daily life';
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Renders the "what would you like to study today?" picker into a
+// container. opts: { initial: {topics, surprise}, onStart(selection) }.
+function renderTopicPicker(container, opts) {
+  const state = { topics: [...opts.initial.topics], surprise: opts.initial.surprise };
+  function draw() {
+    container.innerHTML = `
+      <div class="lesson-body">
+        <h1 style="font-size:24px;margin-bottom:6px;">${t('tp.title')}</h1>
+        <p class="text-dim" style="font-size:14px;margin-bottom:20px;">${t('tp.subtitle')}</p>
+        <div class="grid-4" id="tpGrid"></div>
+        <button class="row-option${state.surprise ? ' active' : ''}" id="tpSurprise" style="margin-top:12px;justify-content:center;">
+          <span style="font-weight:700;">${t('tp.surpriseMe')}</span>
+        </button>
+        <button class="btn-primary" id="tpStartBtn" style="margin-top:22px;width:100%;justify-content:center;" ${(state.topics.length || state.surprise) ? '' : 'disabled'}>${t('tp.start')}</button>
+      </div>`;
+    const grid = document.getElementById('tpGrid');
+    grid.innerHTML = INTERESTS.map(i => `<button class="tile${state.topics.includes(i.id) ? ' active' : ''}" data-i="${i.id}"><span>${t(i.key)}</span></button>`).join('');
+    grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.i;
+      const idx = state.topics.indexOf(id);
+      if (idx >= 0) state.topics.splice(idx, 1); else state.topics.push(id);
+      state.surprise = false;
+      draw();
+    }));
+    document.getElementById('tpSurprise').addEventListener('click', () => {
+      state.surprise = !state.surprise;
+      if (state.surprise) state.topics = [];
+      draw();
+    });
+    document.getElementById('tpStartBtn').addEventListener('click', () => opts.onStart(state));
+  }
+  draw();
+}
+
+// Fetches the most recent `limit` values of `column` from `table` for this
+// target language + level, used to tell the AI generator what NOT to
+// repeat. Best-effort — returns [] on any failure rather than blocking
+// generation.
+async function fetchRecentValues(table, column, targetLanguage, level, limit) {
+  try {
+    const { data } = await db.from(table).select(column)
+      .eq('target_language', targetLanguage).eq('level', level)
+      .order('created_at', { ascending: false }).limit(limit || 5);
+    return (data || []).map(row => row[column]).filter(Boolean);
+  } catch (e) {
+    return [];
+  }
+}
+
 // --- DEV MODE ---------------------------------------------------------
 // Login is deferred until later in the build. Every page that would
 // normally require a signed-in user instead gets this one fixed mock

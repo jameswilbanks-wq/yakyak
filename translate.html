@@ -19,7 +19,7 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
-    let user = null, profile = null, exercises = [], attempts = [];
+    let user = null, profile = null, exercises = [], attempts = [], sessionTopic = null;
     let idx = 0, submitted = false;
 
     function renderLoading() {
@@ -45,6 +45,7 @@
     async function loadSet() {
       renderLoading();
       try {
+        const avoid = await fetchRecentValues('translation_exercises', 'source_text', profile.target_language, profile.current_level, 10);
         const token = await getAuthToken();
         const res = await fetch(TRANSLATE_GENERATE_URL, {
           method: 'POST',
@@ -53,7 +54,9 @@
             targetLanguage: langByCode(profile.target_language).name,
             nativeLanguage: profile.native_language,
             level: profile.current_level,
-            interest: profile.interests[0] || 'daily life',
+            interest: sessionTopic || 'daily life',
+            angle: randomAngle(),
+            avoid,
           }),
         });
         const raw = await res.text();
@@ -87,7 +90,7 @@
             source_lang: ex.sourceLang,
             expected_text: ex.expectedText,
             grammar_point_id: gp ? gp.id : null,
-            interest_tag: profile.interests[0] || null,
+            interest_tag: sessionTopic || null,
           }).select('id').single();
 
           exercises.push({
@@ -247,7 +250,15 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
-      loadSet();
+      document.getElementById('progressLabel').textContent = '';
+      renderTopicPicker(document.getElementById('translateBody'), {
+        initial: getLastTopics(profile),
+        onStart: async (selection) => {
+          await saveLastTopics(user.id, selection);
+          sessionTopic = pickTopicForSession(selection);
+          loadSet();
+        },
+      });
     })();
   </script>
 </body>

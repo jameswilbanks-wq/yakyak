@@ -39,20 +39,18 @@
       { id: 'listening', key: 'style.listening' },
       { id: 'mixed', key: 'style.mixed' },
     ];
-    const INTERESTS = [
-      { id: 'Sports', key: 'int.sports' }, { id: 'Travel', key: 'int.travel' }, { id: 'Food', key: 'int.food' },
-      { id: 'History', key: 'int.history' }, { id: 'Business', key: 'int.business' }, { id: 'Technology', key: 'int.technology' },
-      { id: 'Gaming', key: 'int.gaming' }, { id: 'Movies', key: 'int.movies' }, { id: 'Fitness', key: 'int.fitness' },
-      { id: 'Music', key: 'int.music' }, { id: 'Family', key: 'int.family' }, { id: 'Animals', key: 'int.animals' },
-    ];
+    // Topics (interests) are no longer picked here — that question moved to
+    // a per-session picker at the top of each learning module, since a
+    // one-time onboarding pick meant every lesson forever used the same
+    // narrow topic list. See INTERESTS/renderTopicPicker in supabase-client.js.
 
-    const steps = ['name', 'level', 'motivation', 'time', 'style', 'interests'];
+    const steps = ['name', 'level', 'motivation', 'time', 'style'];
     let stepIndex = 0;
     let user = null;
 
     const form = {
       name: '', native: 'English', learning: null, current: null, target: null,
-      motivations: [], time: null, style: null, interests: [],
+      motivations: [], time: null, style: null,
     };
 
     function valid() {
@@ -62,7 +60,6 @@
         case 'motivation': return form.motivations.length > 0;
         case 'time': return form.time !== null;
         case 'style': return form.style !== null;
-        case 'interests': return form.interests.length >= 3;
       }
     }
 
@@ -195,17 +192,6 @@
         list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.style = b.dataset.s; renderStep(); }));
       }
 
-      if (s === 'interests') {
-        content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.talkingAbout')}</h1>
-          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.pick36')}</p>
-          <div class="grid-4" id="interestGrid"></div>
-        `;
-        const grid = document.getElementById('interestGrid');
-        grid.innerHTML = INTERESTS.map(i => `<button class="tile${form.interests.includes(i.id) ? ' active' : ''}" data-i="${i.id}"><span>${t(i.key)}</span></button>`).join('');
-        grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { toggleArr(form.interests, b.dataset.i, 6); renderStep(); }));
-      }
-
       renderFooter();
     }
 
@@ -237,7 +223,6 @@
         target_level: form.target,
         daily_minutes: form.time,
         learning_style: form.style,
-        interests: form.interests,
         motivations: form.motivations,
       });
 

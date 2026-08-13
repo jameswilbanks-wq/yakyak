@@ -59,7 +59,7 @@
         <div class="card">
           <span class="chip-mini">${t('db.todaysLesson')} · ${profile.daily_minutes} min</span>
           <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.readyWhenYouAre')}</h2>
-          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.freshLesson', { lang: langDisplay(learning.code), interest: profile.interests[0] || '' })}</p>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.freshLesson', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startLessonBtn">${t('db.startLesson')}</button>
         </div>
 
