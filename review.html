@@ -17,6 +17,7 @@
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     let user = null, profile = null, queue = [], idx = 0, reviewedCount = 0, correctCount = 0, revealed = false;
 
@@ -24,7 +25,7 @@
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
           <div id="mascotSlot" style="width:52px;"></div>
-          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Pulling together what's due…</p>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('rv.pullingTogether')}</p>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
     }
@@ -34,11 +35,11 @@
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
           <div id="mascotSlot" style="width:52px;"></div>
-          <h2 style="font-size:21px;margin:16px 0 6px;">Nothing due yet</h2>
-          <p class="text-dim" style="font-size:13.5px;max-width:280px;">This fills up as you translate and talk — every weak spot gets scheduled to come back here.</p>
+          <h2 style="font-size:21px;margin:16px 0 6px;">${t('rv.nothingDue')}</h2>
+          <p class="text-dim" style="font-size:13.5px;max-width:280px;">${t('rv.fillsUp')}</p>
           <div style="display:flex;gap:10px;margin-top:20px;">
-            <button class="btn-primary" id="goTranslate">Translate</button>
-            <button class="btn-primary" id="goTalk">Talk</button>
+            <button class="btn-primary" id="goTranslate">${t('rv.translate')}</button>
+            <button class="btn-primary" id="goTalk">${t('rv.talk')}</button>
           </div>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
@@ -60,10 +61,10 @@
       for (const row of due || []) {
         if (row.skill_type === 'grammar') {
           const { data: gp } = await db.from('grammar_points').select('*').eq('id', row.skill_ref_id).single();
-          if (gp) queue.push({ skillType: 'grammar', skillRefId: row.skill_ref_id, front: gp.label, back: gp.description, sub: 'Grammar' });
+          if (gp) queue.push({ skillType: 'grammar', skillRefId: row.skill_ref_id, front: gp.label, back: gp.description, sub: t('rv.grammar') });
         } else {
           const { data: vi } = await db.from('vocab_items').select('*').eq('id', row.skill_ref_id).single();
-          if (vi) queue.push({ skillType: 'vocab', skillRefId: row.skill_ref_id, front: vi.target_text, back: vi.native_text, sub: 'Vocab' });
+          if (vi) queue.push({ skillType: 'vocab', skillRefId: row.skill_ref_id, front: vi.target_text, back: vi.native_text, sub: t('rv.vocab') });
         }
       }
 
@@ -74,7 +75,7 @@
     function renderCard() {
       revealed = false;
       const item = queue[idx];
-      document.getElementById('topLabel').textContent = `${idx + 1} of ${queue.length}`;
+      document.getElementById('topLabel').textContent = t('rv.ofTotal', { i: idx + 1, n: queue.length });
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-body">
           <span class="chip-mini">${item.sub}</span>
@@ -89,7 +90,7 @@
 
     function renderRevealAction() {
       document.getElementById('actionSlot').innerHTML = `
-        <button class="btn-primary" id="revealBtn" style="width:100%;justify-content:center;">Reveal →</button>`;
+        <button class="btn-primary" id="revealBtn" style="width:100%;justify-content:center;">${t('rv.reveal')}</button>`;
       document.getElementById('revealBtn').addEventListener('click', () => {
         revealed = true;
         document.getElementById('backText').style.display = 'block';
@@ -100,8 +101,8 @@
     function renderGradeActions() {
       document.getElementById('actionSlot').innerHTML = `
         <div style="display:flex;gap:10px;">
-          <button class="row-option" id="missedBtn" style="border-color:var(--danger);justify-content:center;"><span style="font-weight:700;color:var(--danger);">✗ Missed it</span></button>
-          <button class="row-option" id="gotBtn" style="border-color:var(--mint);justify-content:center;"><span style="font-weight:700;color:var(--mint);">✓ Got it</span></button>
+          <button class="row-option" id="missedBtn" style="border-color:var(--danger);justify-content:center;"><span style="font-weight:700;color:var(--danger);">${t('rv.missedIt')}</span></button>
+          <button class="row-option" id="gotBtn" style="border-color:var(--mint);justify-content:center;"><span style="font-weight:700;color:var(--mint);">${t('rv.gotIt')}</span></button>
         </div>`;
       document.getElementById('gotBtn').addEventListener('click', () => grade(true));
       document.getElementById('missedBtn').addEventListener('click', () => grade(false));
@@ -122,9 +123,9 @@
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">🏆</div>
-          <h2 style="font-size:24px;margin:14px 0 4px;">Review done</h2>
-          <p class="text-dim" style="font-size:14.5px;">${correctCount} of ${reviewedCount} remembered · +${xpEarned} XP</p>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('rv.reviewDone')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('rv.rememberedOfTotal', { c: correctCount, t: reviewedCount, xp: xpEarned })}</p>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rv.backToHome')}</button>
         </div>`;
 
       const today = new Date().toISOString().slice(0, 10);
@@ -145,6 +146,7 @@
       if (!user) return;
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
       loadQueue();
     })();
   </script>

@@ -10,17 +10,18 @@
 <body>
   <div class="dash-wrap">
     <div class="dash-content" id="dashContent">
-      <p class="text-dim">Loading…</p>
+      <p class="text-dim" id="loadingLabel">Loading…</p>
     </div>
     <div class="bottom-nav">
-      <a class="nav-item active" href="dashboard.html">🏠<span>Home</span></a>
-      <a class="nav-item" href="review.html">📊<span>Progress</span></a>
-      <a class="nav-item" href="roleplay.html">💬<span>Talk</span></a>
-      <button class="nav-item" id="signOutBtn" style="cursor:pointer;">👤<span>Sign out</span></button>
+      <a class="nav-item active" href="dashboard.html" id="navHome">🏠<span>Home</span></a>
+      <a class="nav-item" href="review.html" id="navProgress">📊<span>Progress</span></a>
+      <a class="nav-item" href="roleplay.html" id="navTalk">💬<span>Talk</span></a>
+      <button class="nav-item" id="signOutBtn" style="cursor:pointer;">👤<span id="navSignoutLabel">Sign out</span></button>
     </div>
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     (async () => {
       const user = await requireAuth();
@@ -28,6 +29,12 @@
 
       const profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+      document.getElementById('loadingLabel').textContent = t('db.loading');
+      document.getElementById('navHome').querySelector('span').textContent = t('nav.home');
+      document.getElementById('navProgress').querySelector('span').textContent = t('nav.progress');
+      document.getElementById('navTalk').querySelector('span').textContent = t('nav.talk');
+      document.getElementById('navSignoutLabel').textContent = t('nav.signout');
 
       const { count: completionCount } = await db
         .from('lesson_completions').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
@@ -40,7 +47,7 @@
             <div id="mascotSlot" style="width:38px;"></div>
             <div>
               <h1 style="font-size:22px;">${greeting()}, ${profile.name}.</h1>
-              <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level} · ${profile.daily_minutes} min/day</p>
+              <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level} · ${profile.daily_minutes} ${t('db.minPerDay')}</p>
             </div>
           </div>
           <div style="display:flex;gap:8px;">
@@ -50,30 +57,30 @@
         </div>
 
         <div class="card">
-          <span class="chip-mini">Today's lesson · ${profile.daily_minutes} min</span>
-          <h2 style="font-size:22px;margin:8px 0 4px;">Ready when you are</h2>
-          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">A fresh lesson in ${learning.name}, built around ${profile.interests[0] || 'your interests'}.</p>
-          <button class="btn-primary" id="startLessonBtn">Start lesson →</button>
+          <span class="chip-mini">${t('db.todaysLesson')} · ${profile.daily_minutes} min</span>
+          <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.readyWhenYouAre')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.freshLesson', { lang: langDisplay(learning.code), interest: profile.interests[0] || '' })}</p>
+          <button class="btn-primary" id="startLessonBtn">${t('db.startLesson')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">Translate &amp; diagnose</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">Translate &amp; catch weak spots</h2>
-          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">Six quick sentences, both directions — we'll flag what needs review.</p>
-          <button class="btn-primary" id="startTranslateBtn">Start translating →</button>
+          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${t('db.translateDiagnose')}</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.translateWeakSpots')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.sixSentences')}</p>
+          <button class="btn-primary" id="startTranslateBtn">${t('db.startTranslating')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini">Listen &amp; read</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">Comprehensible input</h2>
-          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">A short passage at your level, then a quick check on what stuck.</p>
-          <button class="btn-primary" id="startInputBtn">Start reading/listening →</button>
+          <span class="chip-mini">${t('db.listenRead')}</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.comprehensibleInput')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.shortPassage')}</p>
+          <button class="btn-primary" id="startInputBtn">${t('db.startReadingListening')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
-            <span class="label" style="margin-bottom:0;">Your path</span>
-            <span class="text-faint" style="font-size:11px;">${completionCount || 0} lessons completed</span>
+            <span class="label" style="margin-bottom:0;">${t('db.yourPath')}</span>
+            <span class="text-faint" style="font-size:11px;">${t('db.lessonsCompleted', { n: completionCount || 0 })}</span>
           </div>
           <div id="ladderSlot"></div>
         </div>
@@ -90,7 +97,7 @@
       if (DEV_MODE) {
         signOutBtn.disabled = true;
         signOutBtn.style.opacity = '.35';
-        signOutBtn.title = 'Login comes later in the build';
+        signOutBtn.title = t('nav.signoutLater');
       } else {
         signOutBtn.addEventListener('click', async () => {
           await db.auth.signOut();

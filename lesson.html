@@ -17,6 +17,7 @@
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     let user = null, profile = null, lesson = null, lessonRowId = null;
     let quizIndex = 0, picked = null, correctCount = 0;
@@ -26,7 +27,7 @@
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
           <div id="mascotSlot" style="width:52px;"></div>
-          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Yak is putting your lesson together…</p>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('ls.puttingTogether')}</p>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
     }
@@ -35,9 +36,9 @@
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center error-box">
           <div style="font-size:30px;">⚠️</div>
-          <p style="font-weight:700;">Couldn't generate your lesson</p>
+          <p style="font-weight:700;">${t('ls.couldntGenerate')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
-          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">↻ Try again</button>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
         </div>`;
       document.getElementById('retryBtn').addEventListener('click', loadLesson);
     }
@@ -91,11 +92,11 @@
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-body">
           <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${lesson.intro}</p>
-          <span class="label">New vocabulary</span>
+          <span class="label">${t('ls.newVocab')}</span>
           <div class="vocab-list" id="vocabList"></div>
-          <span class="label" style="margin-top:22px;display:block;">Mini dialogue</span>
+          <span class="label" style="margin-top:22px;display:block;">${t('ls.miniDialogue')}</span>
           <div class="dialogue-box" id="dialogueBox"></div>
-          <button class="btn-primary" id="quizBtn" style="margin-top:26px;width:100%;justify-content:center;">Check the dialogue →</button>
+          <button class="btn-primary" id="quizBtn" style="margin-top:26px;width:100%;justify-content:center;">${t('ls.checkDialogue')}</button>
         </div>`;
 
       document.getElementById('vocabList').innerHTML = lesson.vocab.map((v, i) => `
@@ -134,17 +135,17 @@
       dqSubmitted = false;
       const line = lesson.dialogue[dqIdx];
       const learning = langByCode(profile.target_language);
-      document.getElementById('lessonTitle').textContent = `Dialogue check · ${dqIdx + 1} of ${lesson.dialogue.length}`;
+      document.getElementById('lessonTitle').textContent = `${t('ls.dialogueCheck')} · ${dqIdx + 1}/${lesson.dialogue.length}`;
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-body">
-          <span class="chip-mini">Speaker ${line.speaker}</span>
+          <span class="chip-mini">${t('ls.speaker')} ${line.speaker}</span>
           <div class="card" style="margin-top:14px;display:flex;align-items:center;gap:10px;">
             <button class="icon-btn icon-btn-sm" id="dqSpeakBtn">🔊</button>
             <p style="font-size:17px;font-weight:700;font-family:var(--font-display);">${line.target}</p>
           </div>
-          <label class="label" style="margin-top:22px;">What does this mean, in ${profile.native_language}?</label>
-          <textarea id="dqInput" class="input" rows="3" style="resize:none;" placeholder="Type it here…"></textarea>
-          <button class="btn-primary" id="dqSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>Check →</button>
+          <label class="label" style="margin-top:22px;">${t('ls.whatDoesMean', { lang: nativeLangDisplay(profile.native_language) })}</label>
+          <textarea id="dqInput" class="input" rows="3" style="resize:none;" placeholder="${t('ls.typeHere')}"></textarea>
+          <button class="btn-primary" id="dqSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>${t('ls.check')}</button>
           <div id="dqFeedbackSlot" style="margin-top:16px;"></div>
         </div>`;
 
@@ -161,7 +162,7 @@
       const submitBtn = document.getElementById('dqSubmitBtn');
       const answer = input.value.trim();
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Checking…';
+      submitBtn.textContent = t('ls.checking');
       input.disabled = true;
 
       let result;
@@ -193,13 +194,13 @@
       const good = result.isCorrect;
       document.getElementById('dqFeedbackSlot').innerHTML = `
         <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
-          <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Nice work' : '✗ Not quite'}</p>
+          <p style="font-weight:800;">${good === null ? t('ls.skipped') : good ? t('ls.niceWork') : t('ls.notQuite')}</p>
           <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
-          ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">One good answer: <b style="color:var(--text);">${line.native}</b></p>` : ''}
+          ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">${t('ls.oneGoodAnswer')} <b style="color:var(--text);">${line.native}</b></p>` : ''}
         </div>`;
 
       submitBtn.disabled = false;
-      submitBtn.textContent = dqIdx + 1 < lesson.dialogue.length ? 'Next →' : 'See results →';
+      submitBtn.textContent = dqIdx + 1 < lesson.dialogue.length ? t('ls.next') : t('ls.seeResults');
     }
 
     function nextDialogueLine() {
@@ -215,16 +216,16 @@
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">${correct === total ? '🎉' : '📝'}</div>
-          <h2 style="font-size:24px;margin:14px 0 4px;">${correct === total ? 'Perfect!' : 'Almost there'}</h2>
-          <p class="text-dim" style="font-size:14.5px;">${correct} of ${total} correct</p>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${correct === total ? t('ls.perfect') : t('ls.almostThere')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('ls.correctOfTotal', { c: correct, t: total })}</p>
           ${missed.length ? `
             <div class="card" style="margin-top:18px;text-align:left;max-width:340px;">
-              <span class="label">Lines to review</span>
+              <span class="label">${t('ls.linesToReview')}</span>
               ${missed.map(m => `<p class="text-dim" style="font-size:13px;margin-top:4px;">${m.line.target} <span class="text-faint">— ${m.line.native}</span></p>`).join('')}
             </div>` : ''}
           <div style="display:flex;gap:10px;margin-top:22px;">
-            ${correct < total ? '<button class="btn-ghost" id="retryDqBtn">↻ Try again</button>' : ''}
-            <button class="btn-primary" id="continueDqBtn">${correct === total ? 'Continue →' : 'Continue anyway →'}</button>
+            ${correct < total ? `<button class="btn-ghost" id="retryDqBtn">${t('ls.retry')}</button>` : ''}
+            <button class="btn-primary" id="continueDqBtn">${correct === total ? t('ls.continueArrow') : t('ls.continueAnyway')}</button>
           </div>
         </div>`;
       if (correct < total) {
@@ -236,11 +237,11 @@
     }
 
     function renderQuiz() {
-      document.getElementById('lessonTitle').textContent = `Quiz · ${quizIndex + 1} of ${lesson.quiz.length}`;
+      document.getElementById('lessonTitle').textContent = `${t('ls.quiz')} · ${quizIndex + 1}/${lesson.quiz.length}`;
       const q = lesson.quiz[quizIndex];
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-body">
-          <span class="text-faint" style="font-size:12px;">Question ${quizIndex + 1} of ${lesson.quiz.length}</span>
+          <span class="text-faint" style="font-size:12px;">${t('ls.quiz')} ${quizIndex + 1}/${lesson.quiz.length}</span>
           <h2 style="font-size:21px;margin:8px 0 18px;">${q.question}</h2>
           <div style="display:flex;flex-direction:column;gap:10px;" id="optionsList"></div>
           <div id="nextQBtn"></div>
@@ -258,7 +259,7 @@
             if (i === q.answerIndex) b.classList.add('correct');
             else if (i === picked) b.classList.add('wrong');
           });
-          document.getElementById('nextQBtn').innerHTML = `<button class="btn-primary" id="nextBtn" style="margin-top:20px;width:100%;justify-content:center;">${quizIndex + 1 < lesson.quiz.length ? 'Next question' : 'Finish lesson'} →</button>`;
+          document.getElementById('nextQBtn').innerHTML = `<button class="btn-primary" id="nextBtn" style="margin-top:20px;width:100%;justify-content:center;">${quizIndex + 1 < lesson.quiz.length ? t('ls.nextQuestion') : t('ls.finishLesson')}</button>`;
           document.getElementById('nextBtn').addEventListener('click', () => {
             if (quizIndex + 1 < lesson.quiz.length) { quizIndex++; picked = null; renderQuiz(); }
             else finishLesson();
@@ -273,9 +274,9 @@
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">🏆</div>
-          <h2 style="font-size:24px;margin:14px 0 4px;">Lesson complete</h2>
-          <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${correctCount} of ${lesson.quiz.length} correct</p>
-          <button class="btn-primary" id="doneBtn">Back to home →</button>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('ls.lessonComplete')}</h2>
+          <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${t('ls.correctOfTotal', { c: correctCount, t: lesson.quiz.length })}</p>
+          <button class="btn-primary" id="doneBtn">${t('ls.backToHome')}</button>
         </div>`;
 
       if (lessonRowId) {
@@ -302,6 +303,7 @@
       if (!user) return;
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
       loadLesson();
     })();
   </script>

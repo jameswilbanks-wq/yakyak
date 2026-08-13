@@ -17,6 +17,7 @@
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     let user = null, profile = null, kind = null, passage = null, passageId = null;
     let sIdx = 0, sentenceResults = [], playedOnce = false;
@@ -30,13 +31,13 @@
       document.getElementById('topLabel').textContent = '';
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-body">
-          <h1 style="font-size:24px;margin-bottom:6px;">Listen or read?</h1>
-          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">Either way, you'll read each sentence out loud and we'll check your pronunciation and comprehension as you go.</p>
+          <h1 style="font-size:24px;margin-bottom:6px;">${t('in.listenOrRead')}</h1>
+          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">${t('in.eitherWay')}</p>
           <div style="display:flex;flex-direction:column;gap:10px;">
-            <button class="row-option" id="pickReading"><span style="font-weight:700;">📖 Reading</span><span class="text-faint" style="font-size:12.5px;">See it, read it aloud</span></button>
-            <button class="row-option" id="pickListening"><span style="font-weight:700;">🎧 Listening</span><span class="text-faint" style="font-size:12.5px;">Hear it, then say it back</span></button>
+            <button class="row-option" id="pickReading"><span style="font-weight:700;">📖 ${t('in.reading')}</span><span class="text-faint" style="font-size:12.5px;">${t('in.seeItReadIt')}</span></button>
+            <button class="row-option" id="pickListening"><span style="font-weight:700;">🎧 ${t('in.listening')}</span><span class="text-faint" style="font-size:12.5px;">${t('in.hearItSayBack')}</span></button>
           </div>
-          ${!micSupported ? `<p class="text-faint" style="font-size:11.5px;margin-top:16px;">Your browser doesn't support speech recognition — you can still read along, just without pronunciation scoring. Chrome or Edge works best.</p>` : ''}
+          ${!micSupported ? `<p class="text-faint" style="font-size:11.5px;margin-top:16px;">${t('in.noMicSupport')}</p>` : ''}
         </div>`;
       document.getElementById('pickReading').addEventListener('click', () => loadPassage('reading'));
       document.getElementById('pickListening').addEventListener('click', () => loadPassage('listening'));
@@ -46,7 +47,7 @@
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-center">
           <div id="mascotSlot" style="width:52px;"></div>
-          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Yak is writing something for you…</p>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('in.writingSomething')}</p>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
     }
@@ -55,9 +56,9 @@
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-center error-box">
           <div style="font-size:30px;">⚠️</div>
-          <p style="font-weight:700;">Couldn't generate this</p>
+          <p style="font-weight:700;">${t('in.couldntGenerate')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
-          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">↻ Try again</button>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
         </div>`;
       document.getElementById('retryBtn').addEventListener('click', () => loadPassage(kind));
     }
@@ -117,28 +118,28 @@
       isRecording = false;
       const sentence = passage.sentences[sIdx];
       const tts = langByCode(profile.target_language).tts;
-      document.getElementById('topLabel').textContent = `Sentence ${sIdx + 1} of ${passage.sentences.length}`;
+      document.getElementById('topLabel').textContent = t('in.sentenceOfTotal', { i: sIdx + 1, n: passage.sentences.length });
 
       const showText = kind === 'reading';
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-body">
           ${renderProgress()}
-          <span class="chip-mini">${kind === 'listening' ? '🎧 Listen, then say it back' : '📖 Read it aloud'}</span>
+          <span class="chip-mini">${kind === 'listening' ? t('in.listenSayBack') : t('in.readAloud')}</span>
           <div class="card" style="margin-top:14px;min-height:90px;display:flex;align-items:center;justify-content:center;text-align:center;">
             ${showText
               ? `<p style="font-size:19px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>`
               : `<div id="listenSlot">
-                   <button class="btn-primary" id="playBtn">🔊 Play the sentence</button>
-                   <p class="text-faint" style="font-size:11.5px;margin-top:10px;">Tap play, listen closely, then say it back below.</p>
+                   <button class="btn-primary" id="playBtn">${t('in.playSentence')}</button>
+                   <p class="text-faint" style="font-size:11.5px;margin-top:10px;">${t('in.tapPlayListen')}</p>
                  </div>`}
           </div>
           <div style="margin-top:28px;text-align:center;" id="micArea">
             ${micSupported ? `
               <button class="mic-btn" id="micBtn" ${showText ? '' : 'disabled'}>🎙️</button>
-              <p class="text-faint" style="font-size:12px;margin-top:10px;" id="micHint">${showText ? 'Tap and read the sentence aloud' : 'Play the sentence first'}</p>
+              <p class="text-faint" style="font-size:12px;margin-top:10px;" id="micHint">${showText ? t('in.tapAndRead') : t('in.playFirst')}</p>
             ` : `
-              <button class="btn-primary" id="skipMicBtn">Continue →</button>
-              <p class="text-faint" style="font-size:11.5px;margin-top:10px;">Pronunciation scoring isn't available in this browser.</p>
+              <button class="btn-primary" id="skipMicBtn">${t('in.continueArrow')}</button>
+              <p class="text-faint" style="font-size:11.5px;margin-top:10px;">${t('in.pronScoringUnavailable')}</p>
             `}
           </div>
         </div>`;
@@ -150,7 +151,7 @@
           const micBtn = document.getElementById('micBtn');
           if (micBtn) {
             micBtn.disabled = false;
-            document.getElementById('micHint').textContent = 'Now tap and say it back';
+            document.getElementById('micHint').textContent = t('in.nowTapSay');
           }
         });
       }
@@ -187,7 +188,7 @@
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (e) {
-        hint.textContent = "Couldn't access your mic — check your browser's permission settings.";
+        hint.textContent = t('in.micPermissionError');
         return;
       }
 
@@ -211,7 +212,7 @@
       isRecording = true;
       micBtn.classList.add('recording');
       micBtn.textContent = '⏹️';
-      hint.textContent = 'Recording… tap the button to stop';
+      hint.textContent = t('in.recordingTapStop');
     }
 
     function stopRecording() {
@@ -222,7 +223,7 @@
       micBtn.classList.remove('recording');
       micBtn.textContent = '🎙️';
       micBtn.disabled = true;
-      hint.textContent = 'Processing…';
+      hint.textContent = t('in.processing');
 
       let recognitionDone = false, recorderDone = false, audioURL = null;
       const maybeFinish = () => {
@@ -254,7 +255,7 @@
       document.getElementById('micArea').innerHTML = `
         <div class="lesson-center" style="padding:10px 0;">
           <div id="mascotSlot" style="width:36px;"></div>
-          <p class="text-dim" style="margin-top:10px;font-size:13px;">Grading your reading…</p>
+          <p class="text-dim" style="margin-top:10px;font-size:13px;">${t('in.gradingReading')}</p>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(36);
 
@@ -294,21 +295,21 @@
           <div style="display:flex;align-items:center;gap:14px;">
             ${r.pronScore !== null ? `<div class="score-badge ${good ? 'good' : 'bad'}">${r.pronScore}</div>` : ''}
             <div>
-              <p style="font-weight:800;">${r.pronScore === null ? 'Skipped' : good ? '✓ Nice reading' : '✗ Worth another look'}</p>
+              <p style="font-weight:800;">${r.pronScore === null ? t('in.skipped') : good ? t('in.niceReading') : t('in.worthAnotherLook')}</p>
               <p class="text-dim" style="font-size:13px;margin-top:2px;">${r.pronFeedback || ''}</p>
             </div>
           </div>
           <div class="card" style="margin-top:16px;">
             <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
-            ${r.heard ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">We heard: "${r.heard}"</p>` : ''}
+            ${r.heard ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">${t('in.weHeard')} "${r.heard}"</p>` : ''}
           </div>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;">
-            <button class="btn-ghost" id="hearCorrectBtn">🔊 Hear it read correctly</button>
-            ${r.audioURL ? `<button class="btn-ghost" id="hearMineBtn">▶️ Hear my recording</button>` : ''}
+            <button class="btn-ghost" id="hearCorrectBtn">${t('in.hearCorrect')}</button>
+            ${r.audioURL ? `<button class="btn-ghost" id="hearMineBtn">${t('in.hearMine')}</button>` : ''}
           </div>
           <div style="display:flex;gap:10px;margin-top:22px;">
-            <button class="btn-ghost" id="retryReadBtn">↻ Retry</button>
-            <button class="btn-primary" id="toComprehendBtn" style="flex:1;justify-content:center;">Continue →</button>
+            <button class="btn-ghost" id="retryReadBtn">${t('in.retry')}</button>
+            <button class="btn-primary" id="toComprehendBtn" style="flex:1;justify-content:center;">${t('in.continueArrow')}</button>
           </div>
         </div>`;
       document.getElementById('hearCorrectBtn').addEventListener('click', () => speak(sentence.target, tts));
@@ -327,9 +328,9 @@
           <div class="card" style="margin-bottom:18px;">
             <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
           </div>
-          <label class="label">What does this mean, in ${profile.native_language}?</label>
-          <textarea id="compInput" class="input" rows="3" style="resize:none;" placeholder="Type it here…"></textarea>
-          <button class="btn-primary" id="compSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>Check →</button>
+          <label class="label">${t('in.whatDoesMean', { lang: nativeLangDisplay(profile.native_language) })}</label>
+          <textarea id="compInput" class="input" rows="3" style="resize:none;" placeholder="${t('in.typeHere')}"></textarea>
+          <button class="btn-primary" id="compSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>${t('in.check')}</button>
           <div id="compFeedbackSlot" style="margin-top:16px;"></div>
         </div>`;
 
@@ -341,7 +342,7 @@
         if (submitted) { nextSentence(); return; }
         const answer = input.value.trim();
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Checking…';
+        submitBtn.textContent = t('in.checking');
         input.disabled = true;
 
         let result;
@@ -373,13 +374,13 @@
         const good = result.isCorrect;
         document.getElementById('compFeedbackSlot').innerHTML = `
           <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
-            <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Got it' : '✗ Not quite'}</p>
+            <p style="font-weight:800;">${good === null ? t('in.skipped') : good ? t('in.gotIt') : t('in.notQuite')}</p>
             <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
-            <p class="text-faint" style="font-size:12px;margin-top:8px;">Full meaning: <b style="color:var(--text);">${sentence.native}</b></p>
+            <p class="text-faint" style="font-size:12px;margin-top:8px;">${t('in.fullMeaning')} <b style="color:var(--text);">${sentence.native}</b></p>
           </div>`;
 
         submitBtn.disabled = false;
-        submitBtn.textContent = sIdx + 1 < passage.sentences.length ? 'Next sentence →' : 'Finish →';
+        submitBtn.textContent = sIdx + 1 < passage.sentences.length ? t('in.nextSentence') : t('in.finish');
       });
     }
 
@@ -399,9 +400,9 @@
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">🏆</div>
-          <h2 style="font-size:24px;margin:14px 0 4px;">Nice work</h2>
-          <p class="text-dim" style="font-size:14.5px;">${compCorrect} of ${total} understood${avgPron !== null ? ` · pronunciation avg ${avgPron}` : ''}</p>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('in.niceWorkTitle')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('in.understoodOfTotal', { c: compCorrect, t: total })}${avgPron !== null ? ` · ${t('in.pronAvg', { n: avgPron })}` : ''}</p>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('in.backToHome')}</button>
         </div>`;
 
       if (passageId) {
@@ -432,6 +433,7 @@
       if (!user) return;
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
       renderPicker();
     })();
   </script>

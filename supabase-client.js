@@ -73,9 +73,9 @@ function speak(text, lang) {
 
 function greeting() {
   const h = new Date().getHours();
-  if (h < 12) return 'Buenos días';
-  if (h < 19) return 'Buenas tardes';
-  return 'Buenas noches';
+  if (h < 12) return t('greeting.morning');
+  if (h < 19) return t('greeting.afternoon');
+  return t('greeting.evening');
 }
 
 // Redirect helper: every protected page calls this first.
@@ -177,11 +177,11 @@ function renderLadder(container, opts) {
         <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
           <div style="display:flex;align-items:baseline;gap:8px;">
             <span class="ladder-code${nodeFilled || isTarget ? ' active' : ''}">${lvl.code}</span>
-            ${!opts.compact ? `<span class="ladder-label">${lvl.label}</span>` : ''}
-            ${isCurrent ? '<span class="chip-mini" style="margin-left:auto;">you are here</span>' : ''}
-            ${isTarget ? '<span style="margin-left:auto;color:var(--mint);font-weight:800;font-size:11px;">GOAL</span>' : ''}
+            ${!opts.compact ? `<span class="ladder-label">${levelLabel(lvl.code)}</span>` : ''}
+            ${isCurrent ? `<span class="chip-mini" style="margin-left:auto;">${t('ob.you.are.here')}</span>` : ''}
+            ${isTarget ? `<span style="margin-left:auto;color:var(--mint);font-weight:800;font-size:11px;">${t('ob.goal')}</span>` : ''}
           </div>
-          ${!opts.compact ? `<span class="ladder-desc">${LEVEL_DESCRIPTIONS[lvl.code]}</span>` : ''}
+          ${!opts.compact ? `<span class="ladder-desc">${levelDesc(lvl.code)}</span>` : ''}
         </div>
       </button>
       ${i > 0 ? `<div class="ladder-line"><div class="ladder-line-fill" style="height:${

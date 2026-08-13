@@ -11,12 +11,13 @@
   <div class="lesson-wrap">
     <div class="lesson-top">
       <button class="icon-btn" id="exitBtn">✕</button>
-      <span class="text-faint" id="topLabel" style="font-size:12.5px;">Talk</span>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
     <div id="roleplayBody" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     const MAX_TURNS = 8;
     let user = null, profile = null, scenarios = [], scenario = null, sessionId = null;
@@ -35,15 +36,15 @@
       document.getElementById('roleplayBody').innerHTML = `
         <div class="lesson-center error-box">
           <div style="font-size:30px;">⚠️</div>
-          <p style="font-weight:700;">Something went wrong</p>
+          <p style="font-weight:700;">${t('rp.somethingWrong')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
-          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">↻ Try again</button>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('rp.tryAgain')}</button>
         </div>`;
       document.getElementById('retryBtn').addEventListener('click', retryFn);
     }
 
     async function loadScenarios() {
-      renderLoading('Yak is scouting a few conversations for you…');
+      renderLoading(t('rp.scoutingConvos'));
       try {
         const token = await getAuthToken();
         const res = await fetch(ROLEPLAY_SCENARIOS_URL, {
@@ -69,11 +70,11 @@
     }
 
     function renderPicker() {
-      document.getElementById('topLabel').textContent = 'Talk';
+      document.getElementById('topLabel').textContent = t('rp.talk');
       document.getElementById('roleplayBody').innerHTML = `
         <div class="lesson-body">
-          <h1 style="font-size:24px;margin-bottom:6px;">Pick a conversation</h1>
-          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">Yak will play the other person — you have to get the job done, in ${langByCode(profile.target_language).name}.</p>
+          <h1 style="font-size:24px;margin-bottom:6px;">${t('rp.pickConvo')}</h1>
+          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">${t('rp.yakWillPlay', { lang: langDisplay(profile.target_language) })}</p>
           <div style="display:flex;flex-direction:column;gap:10px;" id="scenarioList"></div>
         </div>`;
       const list = document.getElementById('scenarioList');
@@ -89,7 +90,7 @@
     }
 
     async function startSession(chosen) {
-      renderLoading('Setting the scene…');
+      renderLoading(t('rp.settingScene'));
       scenario = chosen;
       transcript = [{ speaker: 'ai', text: chosen.openingLine, native: chosen.openingLineNative }];
       turnCount = 0;
@@ -120,14 +121,14 @@
     function renderChat() {
       document.getElementById('topLabel').textContent = scenario.title;
       document.getElementById('roleplayBody').innerHTML = `
-        ${goalCompleted ? `<div class="goal-banner">🎯 Goal reached — wrap up whenever you're ready.</div>` : ''}
+        ${goalCompleted ? `<div class="goal-banner">${t('rp.goalReachedBanner')}</div>` : ''}
         <div class="chat-scroll" id="chatScroll"></div>
         <div class="chat-input-bar">
-          <input id="chatInput" class="input" placeholder="Type your reply in ${langByCode(profile.target_language).name}…">
-          <button class="btn-primary" id="sendBtn">Send</button>
+          <input id="chatInput" class="input" placeholder="${t('rp.typeReply', { lang: langDisplay(profile.target_language) })}">
+          <button class="btn-primary" id="sendBtn">${t('rp.send')}</button>
         </div>
         <div style="padding:8px 20px 0;">
-          <button class="btn-ghost" id="finishBtn">End conversation →</button>
+          <button class="btn-ghost" id="finishBtn">${t('rp.endConvo')}</button>
         </div>`;
 
       renderTranscript();
@@ -159,7 +160,7 @@
       input.value = '';
       input.disabled = true;
       sendBtn.disabled = true;
-      sendBtn.textContent = '…';
+      sendBtn.textContent = '…'; // ellipsis reads fine across all locales as a "sending" indicator
 
       transcript.push({ speaker: 'user', text });
       renderTranscript();
@@ -213,7 +214,7 @@
         if (turnCount >= MAX_TURNS) { finishSession(); return; }
         renderChat();
       } catch (e) {
-        transcript.push({ speaker: 'ai', text: "(couldn't reach Yak just now — try again?)", native: e.message || '' });
+        transcript.push({ speaker: 'ai', text: t('rp.couldntReach'), native: e.message || '' });
         renderChat();
       } finally {
         busy = false;
@@ -225,15 +226,15 @@
       document.getElementById('roleplayBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">${goalCompleted ? '🏆' : '💬'}</div>
-          <h2 style="font-size:24px;margin:14px 0 4px;">${goalCompleted ? 'Goal reached!' : 'Conversation ended'}</h2>
-          <p class="text-dim" style="font-size:14.5px;">${turnCount} exchange${turnCount === 1 ? '' : 's'} · +${xpEarned} XP</p>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${goalCompleted ? t('rp.goalReached') : t('rp.convoEnded')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('rp.exchanges', { n: turnCount })} · +${xpEarned} XP</p>
           ${grammarFlagged.length ? `
             <div class="card" style="margin-top:18px;text-align:left;max-width:340px;">
-              <span class="label">Flagged for review</span>
+              <span class="label">${t('rp.flaggedForReview')}</span>
               <p class="text-dim" style="font-size:13px;">${grammarFlagged.join(', ')}</p>
-              <p class="text-faint" style="font-size:11.5px;margin-top:6px;">These will come back around in your review queue.</p>
+              <p class="text-faint" style="font-size:11.5px;margin-top:6px;">${t('rp.comeBackAround')}</p>
             </div>` : ''}
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rp.backToHome')}</button>
         </div>`;
 
       if (sessionId) {
@@ -261,6 +262,7 @@
       if (!user) return;
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
       loadScenarios();
     })();
   </script>

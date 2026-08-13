@@ -17,6 +17,7 @@
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     let user = null, profile = null, exercises = [], attempts = [];
     let idx = 0, submitted = false;
@@ -25,7 +26,7 @@
       document.getElementById('translateBody').innerHTML = `
         <div class="lesson-center">
           <div id="mascotSlot" style="width:52px;"></div>
-          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">Yak is building your translation set…</p>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('tr.buildingSet')}</p>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
     }
@@ -34,9 +35,9 @@
       document.getElementById('translateBody').innerHTML = `
         <div class="lesson-center error-box">
           <div style="font-size:30px;">⚠️</div>
-          <p style="font-weight:700;">Couldn't build this set</p>
+          <p style="font-weight:700;">${t('tr.couldntBuild')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
-          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">↻ Try again</button>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
         </div>`;
       document.getElementById('retryBtn').addEventListener('click', loadSet);
     }
@@ -113,17 +114,19 @@
       const learning = langByCode(profile.target_language);
       const fromTarget = ex.sourceLang === 'target';
 
-      document.getElementById('progressLabel').textContent = `${idx + 1} of ${exercises.length}`;
+      document.getElementById('progressLabel').textContent = `${idx + 1}/${exercises.length}`;
+      const nativeDisplay = nativeLangDisplay(profile.native_language);
+      const targetDisplay = langDisplay(learning.code);
       document.getElementById('translateBody').innerHTML = `
         <div class="lesson-body">
-          <span class="chip-mini">${fromTarget ? learning.name + ' → ' + profile.native_language : profile.native_language + ' → ' + learning.name}</span>
+          <span class="chip-mini">${fromTarget ? targetDisplay + ' → ' + nativeDisplay : nativeDisplay + ' → ' + targetDisplay}</span>
           <div class="card" style="margin-top:14px;display:flex;align-items:center;gap:10px;">
             <button class="icon-btn icon-btn-sm" id="speakBtn" style="${fromTarget ? '' : 'visibility:hidden;'}">🔊</button>
             <p style="font-size:17px;font-weight:700;font-family:var(--font-display);">${ex.sourceText}</p>
           </div>
-          <label class="label" style="margin-top:22px;">Your translation</label>
-          <textarea id="answerInput" class="input" rows="3" style="resize:none;" placeholder="Type it here…"></textarea>
-          <button class="btn-primary" id="submitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>Check →</button>
+          <label class="label" style="margin-top:22px;">${t('tr.yourTranslation')}</label>
+          <textarea id="answerInput" class="input" rows="3" style="resize:none;" placeholder="${t('tr.typeHere')}"></textarea>
+          <button class="btn-primary" id="submitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>${t('tr.check')}</button>
           <div id="feedbackSlot" style="margin-top:16px;"></div>
         </div>`;
 
@@ -143,7 +146,7 @@
       const submitBtn = document.getElementById('submitBtn');
       const answer = input.value.trim();
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Checking…';
+      submitBtn.textContent = t('tr.checking');
       input.disabled = true;
 
       let result;
@@ -186,13 +189,13 @@
       const good = result.isCorrect;
       box.innerHTML = `
         <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
-          <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Nice work' : '✗ Not quite'}</p>
+          <p style="font-weight:800;">${good === null ? t('tr.skipped') : good ? t('tr.niceWork') : t('tr.notQuite')}</p>
           <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
-          ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">One good answer: <b style="color:var(--text);">${ex.expectedText}</b></p>` : ''}
+          ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">${t('tr.oneGoodAnswer')} <b style="color:var(--text);">${ex.expectedText}</b></p>` : ''}
         </div>`;
 
       submitBtn.disabled = false;
-      submitBtn.textContent = idx + 1 < exercises.length ? 'Next →' : 'Finish set →';
+      submitBtn.textContent = idx + 1 < exercises.length ? t('tr.next') : t('tr.finishSet');
     }
 
     function nextExercise() {
@@ -211,15 +214,15 @@
       document.getElementById('translateBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">🏆</div>
-          <h2 style="font-size:24px;margin:14px 0 4px;">Set complete</h2>
-          <p class="text-dim" style="font-size:14.5px;">${correctCount} of ${attempts.length} correct</p>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('tr.setComplete')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('tr.correctOfTotal', { c: correctCount, t: attempts.length })}</p>
           ${flagged.length ? `
             <div class="card" style="margin-top:18px;text-align:left;max-width:340px;">
-              <span class="label">Flagged for review</span>
+              <span class="label">${t('tr.flaggedForReview')}</span>
               <p class="text-dim" style="font-size:13px;">${flagged.join(', ')}</p>
-              <p class="text-faint" style="font-size:11.5px;margin-top:6px;">These will come back around in your review queue.</p>
+              <p class="text-faint" style="font-size:11.5px;margin-top:6px;">${t('tr.comeBackAround')}</p>
             </div>` : ''}
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('tr.backToHome')}</button>
         </div>`;
 
       const today = new Date().toISOString().slice(0, 10);
@@ -241,6 +244,7 @@
       if (!user) return;
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
       loadSet();
     })();
   </script>

@@ -17,23 +17,34 @@
   </div>
 
   <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
   <script>
     const NATIVE_LANGS = ['English', 'Spanish', 'Portuguese', 'French', 'German', 'Mandarin', 'Other'];
-    const MOTIVATIONS = ['Travel', 'Relationships', 'Business', 'School', 'Citizenship', 'Conversation', 'Reading books', 'Working abroad'];
+    const MOTIVATIONS = [
+      { id: 'Travel', key: 'mot.travel' }, { id: 'Relationships', key: 'mot.relationships' },
+      { id: 'Business', key: 'mot.business' }, { id: 'School', key: 'mot.school' },
+      { id: 'Citizenship', key: 'mot.citizenship' }, { id: 'Conversation', key: 'mot.conversation' },
+      { id: 'Reading books', key: 'mot.reading' }, { id: 'Working abroad', key: 'mot.working_abroad' },
+    ];
     const TIME_OPTIONS = [
-      { id: 5, label: '5 min', hint: 'A quick daily touch' },
-      { id: 15, label: '15 min', hint: 'Solid daily habit' },
-      { id: 30, label: '30 min', hint: 'Real progress' },
-      { id: 60, label: '60+ min', hint: 'Full immersion' },
+      { id: 5, key: 'time.5' },
+      { id: 15, key: 'time.15' },
+      { id: 30, key: 'time.30' },
+      { id: 60, key: 'time.60' },
     ];
     const STYLES = [
-      { id: 'visual', label: 'Visual', desc: 'Images, color, and pattern' },
-      { id: 'reading', label: 'Reading', desc: 'Text, stories, and subtitles' },
-      { id: 'speaking', label: 'Speaking', desc: 'Talking it out loud' },
-      { id: 'listening', label: 'Listening', desc: 'Audio and dialogue' },
-      { id: 'mixed', label: 'Mixed', desc: 'A bit of everything' },
+      { id: 'visual', key: 'style.visual' },
+      { id: 'reading', key: 'style.reading' },
+      { id: 'speaking', key: 'style.speaking' },
+      { id: 'listening', key: 'style.listening' },
+      { id: 'mixed', key: 'style.mixed' },
     ];
-    const INTERESTS = ['Sports', 'Travel', 'Food', 'History', 'Business', 'Technology', 'Gaming', 'Movies', 'Fitness', 'Music', 'Family', 'Animals'];
+    const INTERESTS = [
+      { id: 'Sports', key: 'int.sports' }, { id: 'Travel', key: 'int.travel' }, { id: 'Food', key: 'int.food' },
+      { id: 'History', key: 'int.history' }, { id: 'Business', key: 'int.business' }, { id: 'Technology', key: 'int.technology' },
+      { id: 'Gaming', key: 'int.gaming' }, { id: 'Movies', key: 'int.movies' }, { id: 'Fitness', key: 'int.fitness' },
+      { id: 'Music', key: 'int.music' }, { id: 'Family', key: 'int.family' }, { id: 'Animals', key: 'int.animals' },
+    ];
 
     const steps = ['name', 'level', 'motivation', 'time', 'style', 'interests'];
     let stepIndex = 0;
@@ -70,8 +81,8 @@
     function renderFooter() {
       const footer = document.getElementById('stepFooter');
       footer.innerHTML = `
-        ${stepIndex > 0 ? '<button class="btn-ghost" id="backBtn">← Back</button>' : '<span></span>'}
-        <button class="btn-primary" id="nextBtn" ${valid() ? '' : 'disabled'}>${stepIndex === steps.length - 1 ? 'Build my plan' : 'Continue'} →</button>
+        ${stepIndex > 0 ? `<button class="btn-ghost" id="backBtn">${t('ob.back')}</button>` : '<span></span>'}
+        <button class="btn-primary" id="nextBtn" ${valid() ? '' : 'disabled'}>${stepIndex === steps.length - 1 ? t('ob.buildPlan') : t('ob.continue')}</button>
       `;
       if (stepIndex > 0) document.getElementById('backBtn').addEventListener('click', () => { stepIndex--; renderStep(); });
       document.getElementById('nextBtn').addEventListener('click', onNext);
@@ -94,36 +105,36 @@
       if (s === 'name') {
         content.innerHTML = `
           <div id="mascotSlot" style="width:52px;margin-bottom:16px;"></div>
-          <h1 style="font-size:30px;margin-bottom:6px;">Hey! I'm Yak.</h1>
-          <p class="text-dim" style="margin-bottom:28px;font-size:15px;">Let's build your path together — what should I call you?</p>
-          <label class="label">Your name</label>
-          <input id="nameInput" class="input" placeholder="e.g. Alex" style="margin-bottom:24px;" value="${form.name}">
-          <label class="label">Your native language</label>
+          <h1 style="font-size:30px;margin-bottom:6px;">${t('ob.heyImYak')}</h1>
+          <p class="text-dim" style="margin-bottom:28px;font-size:15px;">${t('ob.buildPath')}</p>
+          <label class="label">${t('ob.yourName')}</label>
+          <input id="nameInput" class="input" placeholder="${t('ob.namePlaceholder')}" style="margin-bottom:24px;" value="${form.name}">
+          <label class="label">${t('ob.yourNativeLang')}</label>
           <div class="chip-row" id="nativeChips"></div>
-          <label class="label" style="margin-top:22px;">Language you want to learn</label>
+          <label class="label" style="margin-top:22px;">${t('ob.langToLearn')}</label>
           <div class="chip-row" id="learningChips"></div>
           <div id="learningBadge" style="margin-top:20px;"></div>
         `;
         document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
         document.getElementById('nameInput').addEventListener('input', e => { form.name = e.target.value; renderFooter(); });
         const nativeChips = document.getElementById('nativeChips');
-        nativeChips.innerHTML = NATIVE_LANGS.map(l => `<button class="chip${form.native === l ? ' active' : ''}" data-l="${l}">${l}</button>`).join('');
-        nativeChips.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { form.native = b.dataset.l; renderStep(); }));
+        nativeChips.innerHTML = NATIVE_LANGS.map(l => `<button class="chip${form.native === l ? ' active' : ''}" data-l="${l}">${nativeLangDisplay(l)}</button>`).join('');
+        nativeChips.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { form.native = b.dataset.l; setLocale(form.native); renderStep(); }));
         const learningChips = document.getElementById('learningChips');
-        learningChips.innerHTML = LANGUAGES.map(l => `<button class="chip${form.learning?.code === l.code ? ' active' : ''}" data-c="${l.code}">${l.name}</button>`).join('');
+        learningChips.innerHTML = LANGUAGES.map(l => `<button class="chip${form.learning?.code === l.code ? ' active' : ''}" data-c="${l.code}">${langDisplay(l.code)}</button>`).join('');
         learningChips.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { form.learning = langByCode(b.dataset.c); renderStep(); }));
         if (form.learning) {
           document.getElementById('learningBadge').innerHTML = `
             <div style="display:flex;align-items:center;gap:10px;">
               <span class="badge">${form.learning.flag}</span>
-              <span class="text-dim" style="font-size:13.5px;">You're learning <b style="color:var(--text);">${form.learning.name}</b></span>
+              <span class="text-dim" style="font-size:13.5px;">${t('ob.youreLearning')} <b style="color:var(--text);">${langDisplay(form.learning.code)}</b></span>
             </div>`;
         }
       }
 
       if (s === 'level') {
         content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">Where are you, and where are you headed?</h1>
+          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.whereHeaded')}</h1>
           <p class="text-dim" id="levelHint" style="margin-bottom:4px;font-size:14px;"></p>
           <div class="card" id="ladderCard" style="padding:18px 18px 6px;margin-top:18px;"></div>
         `;
@@ -145,53 +156,53 @@
 
       if (s === 'motivation') {
         content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">Why ${form.learning?.name || 'this language'}, why now?</h1>
-          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">Choose as many as apply.</p>
+          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.why')} ${form.learning ? langDisplay(form.learning.code) : ''}${t('ob.whyNow')}</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.chooseMany')}</p>
           <div class="grid-3" id="motivGrid"></div>
         `;
         const grid = document.getElementById('motivGrid');
-        grid.innerHTML = MOTIVATIONS.map(m => `<button class="tile${form.motivations.includes(m) ? ' active' : ''}" data-m="${m}"><span>${m}</span></button>`).join('');
+        grid.innerHTML = MOTIVATIONS.map(m => `<button class="tile${form.motivations.includes(m.id) ? ' active' : ''}" data-m="${m.id}"><span>${t(m.key)}</span></button>`).join('');
         grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { toggleArr(form.motivations, b.dataset.m); renderStep(); }));
       }
 
       if (s === 'time') {
         content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">How much time can you give it daily?</h1>
-          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">We'll size every lesson to fit.</p>
+          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.howMuchTime')}</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.sizeEvery')}</p>
           <div style="display:flex;flex-direction:column;gap:10px;" id="timeList"></div>
         `;
         const list = document.getElementById('timeList');
-        list.innerHTML = TIME_OPTIONS.map(t => `
-          <button class="row-option${form.time === t.id ? ' active' : ''}" data-t="${t.id}">
-            <span style="font-weight:700;font-size:15px;font-family:var(--font-display);">${t.label}</span>
-            <span class="text-faint" style="font-size:12.5px;">${t.hint}</span>
+        list.innerHTML = TIME_OPTIONS.map(opt => `
+          <button class="row-option${form.time === opt.id ? ' active' : ''}" data-t="${opt.id}">
+            <span style="font-weight:700;font-size:15px;font-family:var(--font-display);">${t(opt.key + '.label')}</span>
+            <span class="text-faint" style="font-size:12.5px;">${t(opt.key + '.hint')}</span>
           </button>`).join('');
         list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.time = parseInt(b.dataset.t); renderStep(); }));
       }
 
       if (s === 'style') {
         content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">How do you learn best?</h1>
-          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">We'll lean into this, without ignoring the rest.</p>
+          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.learnBest')}</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.leanInto')}</p>
           <div style="display:flex;flex-direction:column;gap:10px;" id="styleList"></div>
         `;
         const list = document.getElementById('styleList');
-        list.innerHTML = STYLES.map(s => `
-          <button class="row-option${form.style === s.id ? ' active' : ''}" data-s="${s.id}">
-            <span style="font-weight:700;font-size:15px;">${s.label}</span>
-            <span class="text-faint" style="font-size:12.5px;">${s.desc}</span>
+        list.innerHTML = STYLES.map(opt => `
+          <button class="row-option${form.style === opt.id ? ' active' : ''}" data-s="${opt.id}">
+            <span style="font-weight:700;font-size:15px;">${t(opt.key + '.label')}</span>
+            <span class="text-faint" style="font-size:12.5px;">${t(opt.key + '.desc')}</span>
           </button>`).join('');
         list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.style = b.dataset.s; renderStep(); }));
       }
 
       if (s === 'interests') {
         content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">What do you actually like talking about?</h1>
-          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">Pick 3–6 — every example will be built around these.</p>
+          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.talkingAbout')}</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.pick36')}</p>
           <div class="grid-4" id="interestGrid"></div>
         `;
         const grid = document.getElementById('interestGrid');
-        grid.innerHTML = INTERESTS.map(i => `<button class="tile${form.interests.includes(i) ? ' active' : ''}" data-i="${i}"><span>${i}</span></button>`).join('');
+        grid.innerHTML = INTERESTS.map(i => `<button class="tile${form.interests.includes(i.id) ? ' active' : ''}" data-i="${i.id}"><span>${t(i.key)}</span></button>`).join('');
         grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { toggleArr(form.interests, b.dataset.i, 6); renderStep(); }));
       }
 
@@ -201,16 +212,16 @@
     function updateLevelHint() {
       const hint = document.getElementById('levelHint');
       if (!hint) return;
-      if (!form.current) hint.textContent = 'Tap the level closest to where you are today.';
-      else if (!form.target) hint.innerHTML = `<b style="color:var(--text);">${form.current}</b> is set as your starting point — now tap a level above it for your goal.`;
-      else hint.innerHTML = `Building a plan from <b style="color:var(--text);">${form.current}</b> to <b style="color:var(--text);">${form.target}</b>.`;
+      if (!form.current) hint.textContent = t('ob.levelHint1');
+      else if (!form.target) hint.innerHTML = `<b style="color:var(--text);">${form.current}</b> ${t('ob.levelHint2')}`;
+      else hint.innerHTML = `${t('ob.levelHint3a')} <b style="color:var(--text);">${form.current}</b> ${t('ob.levelHint3b')} <b style="color:var(--text);">${form.target}</b>.`;
     }
 
     async function finishOnboarding() {
       document.getElementById('stepShell').innerHTML = `
         <div class="fade-slide" style="max-width:380px;">
           <div id="mascotSlot" style="width:56px;margin:0 auto;"></div>
-          <p style="margin-top:22px;font-size:15.5px;">Building your plan…</p>
+          <p style="margin-top:22px;font-size:15.5px;">${t('ob.buildingPlan')}</p>
         </div>`;
       document.getElementById('mascotSlot').innerHTML = mascotHTML(56);
 
@@ -231,7 +242,7 @@
       });
 
       if (error) {
-        document.getElementById('stepShell').innerHTML = `<p style="color:var(--danger);">Couldn't save your profile: ${error.message}</p>`;
+        document.getElementById('stepShell').innerHTML = `<p style="color:var(--danger);">${t('ob.saveError')} ${error.message}</p>`;
         return;
       }
       window.location.href = 'dashboard.html';
