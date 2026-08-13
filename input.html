@@ -21,6 +21,7 @@
     let user = null, profile = null, kind = null, passage = null, passageId = null;
     let sIdx = 0, sentenceResults = [], playedOnce = false;
     let recognition = null, isRecording = false;
+    let mediaRecorder = null, mediaStream = null, audioChunks = [], liveTranscript = '';
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const micSupported = !!SR;
@@ -164,47 +165,92 @@
       }
     }
 
-    function toggleRecording() {
+    async function toggleRecording() {
       const micBtn = document.getElementById('micBtn');
       const hint = document.getElementById('micHint');
       if (isRecording) {
-        recognition && recognition.stop();
+        stopRecording();
         return;
       }
-      const sentence = passage.sentences[sIdx];
+      await startRecording(micBtn, hint);
+    }
+
+    // Recording stays open until the learner taps the button again — no
+    // auto-stop on a pause. Captures raw audio (MediaRecorder, for
+    // play-back) alongside a running speech-recognition transcript (for
+    // grading), in parallel.
+    async function startRecording(micBtn, hint) {
       const tts = langByCode(profile.target_language).tts;
+      audioChunks = [];
+      liveTranscript = '';
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        hint.textContent = "Couldn't access your mic — check your browser's permission settings.";
+        return;
+      }
+
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.start();
+
       recognition = new SR();
       recognition.lang = tts;
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      recognition.onresult = (e) => {
+        let t = '';
+        for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+        liveTranscript = t;
+      };
+      recognition.onerror = () => {}; // keep going — whatever we've captured is used when the learner stops
+      recognition.start();
 
       isRecording = true;
       micBtn.classList.add('recording');
-      micBtn.textContent = '⏺️';
-      hint.textContent = 'Listening… tap to stop';
-
-      let gotResult = false;
-      recognition.onresult = (e) => {
-        gotResult = true;
-        const transcript = e.results[0][0].transcript;
-        gradePronunciation(sentence.target, transcript);
-      };
-      recognition.onerror = () => {
-        isRecording = false;
-        micBtn.classList.remove('recording');
-        micBtn.textContent = '🎙️';
-        hint.textContent = "Didn't catch that — tap to try again";
-      };
-      recognition.onend = () => {
-        isRecording = false;
-        micBtn.classList.remove('recording');
-        micBtn.textContent = '🎙️';
-        if (!gotResult) hint.textContent = "Didn't catch that — tap to try again";
-      };
-      recognition.start();
+      micBtn.textContent = '⏹️';
+      hint.textContent = 'Recording… tap the button to stop';
     }
 
-    async function gradePronunciation(targetSentence, transcript) {
+    function stopRecording() {
+      const micBtn = document.getElementById('micBtn');
+      const hint = document.getElementById('micHint');
+      const sentence = passage.sentences[sIdx];
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micBtn.textContent = '🎙️';
+      micBtn.disabled = true;
+      hint.textContent = 'Processing…';
+
+      let recognitionDone = false, recorderDone = false, audioURL = null;
+      const maybeFinish = () => {
+        if (recognitionDone && recorderDone) gradePronunciation(sentence.target, liveTranscript, audioURL);
+      };
+
+      if (recognition) {
+        recognition.onend = () => { recognitionDone = true; maybeFinish(); };
+        try { recognition.stop(); } catch (e) { recognitionDone = true; maybeFinish(); }
+      } else {
+        recognitionDone = true;
+      }
+
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          audioURL = URL.createObjectURL(blob);
+          if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+          recorderDone = true;
+          maybeFinish();
+        };
+        try { mediaRecorder.stop(); } catch (e) { recorderDone = true; maybeFinish(); }
+      } else {
+        recorderDone = true;
+      }
+    }
+
+    async function gradePronunciation(targetSentence, transcript, audioURL) {
       document.getElementById('micArea').innerHTML = `
         <div class="lesson-center" style="padding:10px 0;">
           <div id="mascotSlot" style="width:36px;"></div>
@@ -233,13 +279,14 @@
         result = { score: null, isGood: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
       }
 
-      sentenceResults[sIdx] = { pronScore: result.score, pronFeedback: result.feedback, heard: transcript };
+      sentenceResults[sIdx] = { pronScore: result.score, pronFeedback: result.feedback, heard: transcript, audioURL };
       renderPronFeedback();
     }
 
     function renderPronFeedback() {
       const sentence = passage.sentences[sIdx];
       const r = sentenceResults[sIdx];
+      const tts = langByCode(profile.target_language).tts;
       const good = r.pronScore === null ? null : r.pronScore >= 75;
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-body">
@@ -255,8 +302,20 @@
             <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
             ${r.heard ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">We heard: "${r.heard}"</p>` : ''}
           </div>
-          <button class="btn-primary" id="toComprehendBtn" style="margin-top:22px;width:100%;justify-content:center;">Continue →</button>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;">
+            <button class="btn-ghost" id="hearCorrectBtn">🔊 Hear it read correctly</button>
+            ${r.audioURL ? `<button class="btn-ghost" id="hearMineBtn">▶️ Hear my recording</button>` : ''}
+          </div>
+          <div style="display:flex;gap:10px;margin-top:22px;">
+            <button class="btn-ghost" id="retryReadBtn">↻ Retry</button>
+            <button class="btn-primary" id="toComprehendBtn" style="flex:1;justify-content:center;">Continue →</button>
+          </div>
         </div>`;
+      document.getElementById('hearCorrectBtn').addEventListener('click', () => speak(sentence.target, tts));
+      if (r.audioURL) {
+        document.getElementById('hearMineBtn').addEventListener('click', () => { new Audio(r.audioURL).play(); });
+      }
+      document.getElementById('retryReadBtn').addEventListener('click', renderReadStep);
       document.getElementById('toComprehendBtn').addEventListener('click', renderComprehendStep);
     }
 
@@ -316,7 +375,7 @@
           <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
             <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Got it' : '✗ Not quite'}</p>
             <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
-            ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">It means: <b style="color:var(--text);">${sentence.native}</b></p>` : ''}
+            <p class="text-faint" style="font-size:12px;margin-top:8px;">Full meaning: <b style="color:var(--text);">${sentence.native}</b></p>
           </div>`;
 
         submitBtn.disabled = false;
@@ -363,6 +422,8 @@
 
     document.getElementById('exitBtn').addEventListener('click', () => {
       if (recognition) { try { recognition.stop(); } catch (e) {} }
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') { try { mediaRecorder.stop(); } catch (e) {} }
+      if (mediaStream) { try { mediaStream.getTracks().forEach(t => t.stop()); } catch (e) {} }
       window.location.href = 'dashboard.html';
     });
 
