@@ -146,3 +146,15 @@ a { color: var(--mint); }
 .goal-banner { display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:14px; background:var(--mint-soft); border:1px solid var(--mint); font-size:12.5px; font-weight:700; color:var(--text); margin:0 20px 10px; }
 .scenario-card { display:flex; flex-direction:column; gap:6px; padding:16px; border-radius:18px; border:1px solid var(--border); background:var(--card); cursor:pointer; text-align:left; width:100%; font-family:inherit; transition:all .18s ease; }
 .scenario-card:hover { border-color:var(--accent); }
+
+.mic-btn { width:68px; height:68px; border-radius:999px; border:none; background:var(--accent-soft); color:var(--accent-ink); font-size:28px; display:flex; align-items:center; justify-content:center; cursor:pointer; margin:0 auto; position:relative; }
+.mic-btn.recording { background:var(--danger); color:#fff; animation: micpulse 1.2s ease-out infinite; }
+.mic-btn:disabled { opacity:.4; cursor:default; }
+@keyframes micpulse { 0%{ box-shadow:0 0 0 0 var(--danger-soft);} 100%{ box-shadow:0 0 0 16px rgba(0,0,0,0);} }
+.score-badge { display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:999px; font-weight:800; font-size:17px; font-family:var(--font-display); flex-shrink:0; }
+.score-badge.good { background:var(--mint-soft); color:var(--mint); }
+.score-badge.bad { background:var(--danger-soft); color:var(--danger); }
+.sentence-progress { display:flex; gap:5px; }
+.sentence-progress .seg { flex:1; height:4px; border-radius:999px; background:var(--border); }
+.sentence-progress .seg.done { background:var(--mint); }
+.sentence-progress .seg.current { background:var(--accent); }

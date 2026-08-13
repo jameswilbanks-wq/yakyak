@@ -20,6 +20,7 @@
   <script>
     let user = null, profile = null, lesson = null, lessonRowId = null;
     let quizIndex = 0, picked = null, correctCount = 0;
+    let dqIdx = 0, dqResults = [], dqSubmitted = false;
 
     function renderLoading() {
       document.getElementById('lessonBody').innerHTML = `
@@ -94,7 +95,7 @@
           <div class="vocab-list" id="vocabList"></div>
           <span class="label" style="margin-top:22px;display:block;">Mini dialogue</span>
           <div class="dialogue-box" id="dialogueBox"></div>
-          <button class="btn-primary" id="quizBtn" style="margin-top:26px;width:100%;justify-content:center;">Quick quiz →</button>
+          <button class="btn-primary" id="quizBtn" style="margin-top:26px;width:100%;justify-content:center;">Check the dialogue →</button>
         </div>`;
 
       document.getElementById('vocabList').innerHTML = lesson.vocab.map((v, i) => `
@@ -116,10 +117,126 @@
       document.querySelectorAll('[data-speak]').forEach(btn => {
         btn.addEventListener('click', () => speak(decodeURIComponent(btn.dataset.speak), tts));
       });
-      document.getElementById('quizBtn').addEventListener('click', () => { quizIndex = 0; picked = null; correctCount = 0; renderQuiz(); });
+      document.getElementById('quizBtn').addEventListener('click', startDialogueQuiz);
+    }
+
+    // --- Dialogue check: type the native-language translation of each ---
+    // dialogue line, graded leniently by the same grader translate.html
+    // uses. Wrong answers explain what was off; less than 100% at the end
+    // offers a full retry before moving on to the multiple-choice quiz.
+    function startDialogueQuiz() {
+      dqIdx = 0;
+      dqResults = [];
+      renderDialogueQuiz();
+    }
+
+    function renderDialogueQuiz() {
+      dqSubmitted = false;
+      const line = lesson.dialogue[dqIdx];
+      const learning = langByCode(profile.target_language);
+      document.getElementById('lessonTitle').textContent = `Dialogue check · ${dqIdx + 1} of ${lesson.dialogue.length}`;
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-body">
+          <span class="chip-mini">Speaker ${line.speaker}</span>
+          <div class="card" style="margin-top:14px;display:flex;align-items:center;gap:10px;">
+            <button class="icon-btn icon-btn-sm" id="dqSpeakBtn">🔊</button>
+            <p style="font-size:17px;font-weight:700;font-family:var(--font-display);">${line.target}</p>
+          </div>
+          <label class="label" style="margin-top:22px;">What does this mean, in ${profile.native_language}?</label>
+          <textarea id="dqInput" class="input" rows="3" style="resize:none;" placeholder="Type it here…"></textarea>
+          <button class="btn-primary" id="dqSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>Check →</button>
+          <div id="dqFeedbackSlot" style="margin-top:16px;"></div>
+        </div>`;
+
+      document.getElementById('dqSpeakBtn').addEventListener('click', () => speak(line.target, learning.tts));
+      const input = document.getElementById('dqInput');
+      const submitBtn = document.getElementById('dqSubmitBtn');
+      input.addEventListener('input', () => { submitBtn.disabled = input.value.trim().length === 0; });
+      submitBtn.addEventListener('click', () => { dqSubmitted ? nextDialogueLine() : submitDialogueAnswer(); });
+    }
+
+    async function submitDialogueAnswer() {
+      const line = lesson.dialogue[dqIdx];
+      const input = document.getElementById('dqInput');
+      const submitBtn = document.getElementById('dqSubmitBtn');
+      const answer = input.value.trim();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Checking…';
+      input.disabled = true;
+
+      let result;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(TRANSLATE_GRADE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            sourceText: line.target,
+            expectedText: line.native,
+            userAnswer: answer,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            grammarLabel: lesson.title,
+          }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        result = data;
+      } catch (e) {
+        result = { isCorrect: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
+      }
+
+      dqSubmitted = true;
+      dqResults.push({ line, answer, correct: result.isCorrect === true });
+
+      const good = result.isCorrect;
+      document.getElementById('dqFeedbackSlot').innerHTML = `
+        <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
+          <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Nice work' : '✗ Not quite'}</p>
+          <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
+          ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">One good answer: <b style="color:var(--text);">${line.native}</b></p>` : ''}
+        </div>`;
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = dqIdx + 1 < lesson.dialogue.length ? 'Next →' : 'See results →';
+    }
+
+    function nextDialogueLine() {
+      if (dqIdx + 1 < lesson.dialogue.length) { dqIdx++; renderDialogueQuiz(); }
+      else finishDialogueQuiz();
+    }
+
+    function finishDialogueQuiz() {
+      const correct = dqResults.filter(r => r.correct).length;
+      const total = dqResults.length;
+      const missed = dqResults.filter(r => !r.correct);
+      document.getElementById('lessonTitle').textContent = '';
+      document.getElementById('lessonBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:40px;">${correct === total ? '🎉' : '📝'}</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${correct === total ? 'Perfect!' : 'Almost there'}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${correct} of ${total} correct</p>
+          ${missed.length ? `
+            <div class="card" style="margin-top:18px;text-align:left;max-width:340px;">
+              <span class="label">Lines to review</span>
+              ${missed.map(m => `<p class="text-dim" style="font-size:13px;margin-top:4px;">${m.line.target} <span class="text-faint">— ${m.line.native}</span></p>`).join('')}
+            </div>` : ''}
+          <div style="display:flex;gap:10px;margin-top:22px;">
+            ${correct < total ? '<button class="btn-ghost" id="retryDqBtn">↻ Try again</button>' : ''}
+            <button class="btn-primary" id="continueDqBtn">${correct === total ? 'Continue →' : 'Continue anyway →'}</button>
+          </div>
+        </div>`;
+      if (correct < total) {
+        document.getElementById('retryDqBtn').addEventListener('click', startDialogueQuiz);
+      }
+      document.getElementById('continueDqBtn').addEventListener('click', () => {
+        quizIndex = 0; picked = null; correctCount = 0; renderQuiz();
+      });
     }
 
     function renderQuiz() {
+      document.getElementById('lessonTitle').textContent = `Quiz · ${quizIndex + 1} of ${lesson.quiz.length}`;
       const q = lesson.quiz[quizIndex];
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-body">
@@ -152,6 +269,7 @@
 
     async function finishLesson() {
       const xpEarned = 20 + correctCount * 10;
+      document.getElementById('lessonTitle').textContent = '';
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">🏆</div>

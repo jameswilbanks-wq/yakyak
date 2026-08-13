@@ -19,18 +19,23 @@
   <script src="supabase-client.js"></script>
   <script>
     let user = null, profile = null, kind = null, passage = null, passageId = null;
-    let quizIndex = 0, picked = null, correctCount = 0, revealed = false;
+    let sIdx = 0, sentenceResults = [], playedOnce = false;
+    let recognition = null, isRecording = false;
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micSupported = !!SR;
 
     function renderPicker() {
       document.getElementById('topLabel').textContent = '';
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-body">
           <h1 style="font-size:24px;margin-bottom:6px;">Listen or read?</h1>
-          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">Same idea either way — a short passage at your level, then a quick check.</p>
+          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">Either way, you'll read each sentence out loud and we'll check your pronunciation and comprehension as you go.</p>
           <div style="display:flex;flex-direction:column;gap:10px;">
-            <button class="row-option" id="pickReading"><span style="font-weight:700;">📖 Reading</span><span class="text-faint" style="font-size:12.5px;">Read a short passage</span></button>
-            <button class="row-option" id="pickListening"><span style="font-weight:700;">🎧 Listening</span><span class="text-faint" style="font-size:12.5px;">Listen, transcript hidden by default</span></button>
+            <button class="row-option" id="pickReading"><span style="font-weight:700;">📖 Reading</span><span class="text-faint" style="font-size:12.5px;">See it, read it aloud</span></button>
+            <button class="row-option" id="pickListening"><span style="font-weight:700;">🎧 Listening</span><span class="text-faint" style="font-size:12.5px;">Hear it, then say it back</span></button>
           </div>
+          ${!micSupported ? `<p class="text-faint" style="font-size:11.5px;margin-top:16px;">Your browser doesn't support speech recognition — you can still read along, just without pronunciation scoring. Chrome or Edge works best.</p>` : ''}
         </div>`;
       document.getElementById('pickReading').addEventListener('click', () => loadPassage('reading'));
       document.getElementById('pickListening').addEventListener('click', () => loadPassage('listening'));
@@ -76,6 +81,7 @@
         if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
         const data = JSON.parse(raw);
         if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.sentences || !data.sentences.length) throw new Error('No sentences returned');
         passage = data;
 
         const { data: row } = await db.from('input_passages').insert({
@@ -85,87 +91,263 @@
           kind,
           title: data.title,
           body: data.body,
-          comprehension_questions: data.questions,
+          sentences: data.sentences,
+          comprehension_questions: data.questions || [],
           interest_tag: profile.interests[0] || null,
         }).select('id').single();
         passageId = row ? row.id : null;
 
-        revealed = kind === 'reading';
-        renderPassage();
+        sIdx = 0;
+        sentenceResults = [];
+        renderReadStep();
       } catch (e) {
         renderError(e.message || 'Unknown error');
       }
     }
 
-    function renderPassage() {
-      document.getElementById('topLabel').textContent = passage.title;
-      const tts = langByCode(profile.target_language).tts;
-      document.getElementById('inputBody').innerHTML = `
-        <div class="lesson-body">
-          <span class="chip-mini">${kind === 'listening' ? '🎧 Listening' : '📖 Reading'}</span>
-          <div class="card" style="margin-top:14px;">
-            ${kind === 'listening' ? `
-              <button class="btn-primary" id="playBtn" style="margin-bottom:14px;">🔊 Play</button>
-              <div id="passageText" style="${revealed ? '' : 'display:none;'}font-size:15px;line-height:1.6;">${passage.body}</div>
-              <button class="btn-ghost" id="revealBtn" style="${revealed ? 'display:none;' : ''}">Show transcript</button>
-            ` : `<div style="font-size:15px;line-height:1.6;">${passage.body}</div>`}
-          </div>
-          <button class="btn-primary" id="continueBtn" style="margin-top:20px;width:100%;justify-content:center;">Comprehension check →</button>
-        </div>`;
-
-      if (kind === 'listening') {
-        document.getElementById('playBtn').addEventListener('click', () => speak(passage.body, tts));
-        const revealBtn = document.getElementById('revealBtn');
-        if (revealBtn) revealBtn.addEventListener('click', () => { revealed = true; renderPassage(); });
-      }
-      document.getElementById('continueBtn').addEventListener('click', () => { quizIndex = 0; correctCount = 0; renderQuiz(); });
+    function renderProgress() {
+      const total = passage.sentences.length;
+      return `<div class="sentence-progress" style="margin-bottom:16px;">${passage.sentences.map((_, i) =>
+        `<div class="seg${i < sIdx ? ' done' : i === sIdx ? ' current' : ''}"></div>`).join('')}</div>`;
     }
 
-    function renderQuiz() {
-      picked = null;
-      const q = passage.questions[quizIndex];
-      document.getElementById('topLabel').textContent = `Question ${quizIndex + 1} of ${passage.questions.length}`;
+    function renderReadStep() {
+      playedOnce = false;
+      isRecording = false;
+      const sentence = passage.sentences[sIdx];
+      const tts = langByCode(profile.target_language).tts;
+      document.getElementById('topLabel').textContent = `Sentence ${sIdx + 1} of ${passage.sentences.length}`;
+
+      const showText = kind === 'reading';
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-body">
-          <h2 style="font-size:21px;margin-bottom:18px;">${q.question}</h2>
-          <div style="display:flex;flex-direction:column;gap:10px;" id="optionsList"></div>
-          <div id="nextQBtn"></div>
+          ${renderProgress()}
+          <span class="chip-mini">${kind === 'listening' ? '🎧 Listen, then say it back' : '📖 Read it aloud'}</span>
+          <div class="card" style="margin-top:14px;min-height:90px;display:flex;align-items:center;justify-content:center;text-align:center;">
+            ${showText
+              ? `<p style="font-size:19px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>`
+              : `<div id="listenSlot">
+                   <button class="btn-primary" id="playBtn">🔊 Play the sentence</button>
+                   <p class="text-faint" style="font-size:11.5px;margin-top:10px;">Tap play, listen closely, then say it back below.</p>
+                 </div>`}
+          </div>
+          <div style="margin-top:28px;text-align:center;" id="micArea">
+            ${micSupported ? `
+              <button class="mic-btn" id="micBtn" ${showText ? '' : 'disabled'}>🎙️</button>
+              <p class="text-faint" style="font-size:12px;margin-top:10px;" id="micHint">${showText ? 'Tap and read the sentence aloud' : 'Play the sentence first'}</p>
+            ` : `
+              <button class="btn-primary" id="skipMicBtn">Continue →</button>
+              <p class="text-faint" style="font-size:11.5px;margin-top:10px;">Pronunciation scoring isn't available in this browser.</p>
+            `}
+          </div>
         </div>`;
-      const list = document.getElementById('optionsList');
-      list.innerHTML = q.options.map((opt, i) => `<button class="option" data-i="${i}">${opt}</button>`).join('');
-      list.querySelectorAll('.option').forEach(btn => {
-        btn.addEventListener('click', () => {
-          if (picked !== null) return;
-          picked = parseInt(btn.dataset.i);
-          if (picked === q.answerIndex) correctCount++;
-          list.querySelectorAll('.option').forEach(b => {
-            const i = parseInt(b.dataset.i);
-            b.disabled = true;
-            if (i === q.answerIndex) b.classList.add('correct');
-            else if (i === picked) b.classList.add('wrong');
-          });
-          document.getElementById('nextQBtn').innerHTML = `<button class="btn-primary" id="nextBtn" style="margin-top:20px;width:100%;justify-content:center;">${quizIndex + 1 < passage.questions.length ? 'Next question' : 'Finish'} →</button>`;
-          document.getElementById('nextBtn').addEventListener('click', () => {
-            if (quizIndex + 1 < passage.questions.length) { quizIndex++; renderQuiz(); }
-            else finish();
-          });
+
+      if (!showText) {
+        document.getElementById('playBtn').addEventListener('click', () => {
+          speak(sentence.target, tts);
+          playedOnce = true;
+          const micBtn = document.getElementById('micBtn');
+          if (micBtn) {
+            micBtn.disabled = false;
+            document.getElementById('micHint').textContent = 'Now tap and say it back';
+          }
         });
+      }
+
+      if (micSupported) {
+        document.getElementById('micBtn').addEventListener('click', toggleRecording);
+      } else {
+        document.getElementById('skipMicBtn').addEventListener('click', () => {
+          sentenceResults[sIdx] = { pronScore: null, pronFeedback: null };
+          renderComprehendStep();
+        });
+      }
+    }
+
+    function toggleRecording() {
+      const micBtn = document.getElementById('micBtn');
+      const hint = document.getElementById('micHint');
+      if (isRecording) {
+        recognition && recognition.stop();
+        return;
+      }
+      const sentence = passage.sentences[sIdx];
+      const tts = langByCode(profile.target_language).tts;
+      recognition = new SR();
+      recognition.lang = tts;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.textContent = '⏺️';
+      hint.textContent = 'Listening… tap to stop';
+
+      let gotResult = false;
+      recognition.onresult = (e) => {
+        gotResult = true;
+        const transcript = e.results[0][0].transcript;
+        gradePronunciation(sentence.target, transcript);
+      };
+      recognition.onerror = () => {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micBtn.textContent = '🎙️';
+        hint.textContent = "Didn't catch that — tap to try again";
+      };
+      recognition.onend = () => {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micBtn.textContent = '🎙️';
+        if (!gotResult) hint.textContent = "Didn't catch that — tap to try again";
+      };
+      recognition.start();
+    }
+
+    async function gradePronunciation(targetSentence, transcript) {
+      document.getElementById('micArea').innerHTML = `
+        <div class="lesson-center" style="padding:10px 0;">
+          <div id="mascotSlot" style="width:36px;"></div>
+          <p class="text-dim" style="margin-top:10px;font-size:13px;">Grading your reading…</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(36);
+
+      let result;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GRADE_PRONUNCIATION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetSentence,
+            transcript,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+          }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        result = data;
+      } catch (e) {
+        result = { score: null, isGood: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
+      }
+
+      sentenceResults[sIdx] = { pronScore: result.score, pronFeedback: result.feedback, heard: transcript };
+      renderPronFeedback();
+    }
+
+    function renderPronFeedback() {
+      const sentence = passage.sentences[sIdx];
+      const r = sentenceResults[sIdx];
+      const good = r.pronScore === null ? null : r.pronScore >= 75;
+      document.getElementById('inputBody').innerHTML = `
+        <div class="lesson-body">
+          ${renderProgress()}
+          <div style="display:flex;align-items:center;gap:14px;">
+            ${r.pronScore !== null ? `<div class="score-badge ${good ? 'good' : 'bad'}">${r.pronScore}</div>` : ''}
+            <div>
+              <p style="font-weight:800;">${r.pronScore === null ? 'Skipped' : good ? '✓ Nice reading' : '✗ Worth another look'}</p>
+              <p class="text-dim" style="font-size:13px;margin-top:2px;">${r.pronFeedback || ''}</p>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px;">
+            <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
+            ${r.heard ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">We heard: "${r.heard}"</p>` : ''}
+          </div>
+          <button class="btn-primary" id="toComprehendBtn" style="margin-top:22px;width:100%;justify-content:center;">Continue →</button>
+        </div>`;
+      document.getElementById('toComprehendBtn').addEventListener('click', renderComprehendStep);
+    }
+
+    function renderComprehendStep() {
+      const sentence = passage.sentences[sIdx];
+      document.getElementById('inputBody').innerHTML = `
+        <div class="lesson-body">
+          ${renderProgress()}
+          <div class="card" style="margin-bottom:18px;">
+            <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
+          </div>
+          <label class="label">What does this mean, in ${profile.native_language}?</label>
+          <textarea id="compInput" class="input" rows="3" style="resize:none;" placeholder="Type it here…"></textarea>
+          <button class="btn-primary" id="compSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>Check →</button>
+          <div id="compFeedbackSlot" style="margin-top:16px;"></div>
+        </div>`;
+
+      const input = document.getElementById('compInput');
+      const submitBtn = document.getElementById('compSubmitBtn');
+      let submitted = false;
+      input.addEventListener('input', () => { submitBtn.disabled = input.value.trim().length === 0; });
+      submitBtn.addEventListener('click', async () => {
+        if (submitted) { nextSentence(); return; }
+        const answer = input.value.trim();
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Checking…';
+        input.disabled = true;
+
+        let result;
+        try {
+          const token = await getAuthToken();
+          const res = await fetch(TRANSLATE_GRADE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({
+              sourceText: sentence.target,
+              expectedText: sentence.native,
+              userAnswer: answer,
+              targetLanguage: langByCode(profile.target_language).name,
+              nativeLanguage: profile.native_language,
+              grammarLabel: passage.title,
+            }),
+          });
+          const raw = await res.text();
+          const data = JSON.parse(raw);
+          if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+          result = data;
+        } catch (e) {
+          result = { isCorrect: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
+        }
+
+        submitted = true;
+        sentenceResults[sIdx].comprehensionCorrect = result.isCorrect === true;
+
+        const good = result.isCorrect;
+        document.getElementById('compFeedbackSlot').innerHTML = `
+          <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
+            <p style="font-weight:800;">${good === null ? 'Skipped' : good ? '✓ Got it' : '✗ Not quite'}</p>
+            <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
+            ${good === false ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">It means: <b style="color:var(--text);">${sentence.native}</b></p>` : ''}
+          </div>`;
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = sIdx + 1 < passage.sentences.length ? 'Next sentence →' : 'Finish →';
       });
     }
 
+    function nextSentence() {
+      if (sIdx + 1 < passage.sentences.length) { sIdx++; renderReadStep(); }
+      else finish();
+    }
+
     async function finish() {
-      const xpEarned = 15 + correctCount * 8;
+      const scored = sentenceResults.filter(r => r.pronScore !== null && r.pronScore !== undefined);
+      const avgPron = scored.length ? Math.round(scored.reduce((s, r) => s + r.pronScore, 0) / scored.length) : null;
+      const compCorrect = sentenceResults.filter(r => r.comprehensionCorrect).length;
+      const total = sentenceResults.length;
+      const xpEarned = 15 + compCorrect * 8 + (avgPron !== null ? Math.round(avgPron / 10) : 0);
+
+      document.getElementById('topLabel').textContent = '';
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-center">
           <div style="font-size:40px;">🏆</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">Nice work</h2>
-          <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${correctCount} of ${passage.questions.length} correct</p>
-          <button class="btn-primary" id="doneBtn">Back to home →</button>
+          <p class="text-dim" style="font-size:14.5px;">${compCorrect} of ${total} understood${avgPron !== null ? ` · pronunciation avg ${avgPron}` : ''}</p>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">Back to home →</button>
         </div>`;
 
       if (passageId) {
         await db.from('input_completions').insert({
-          user_id: user.id, passage_id: passageId, score: correctCount, xp_earned: xpEarned,
+          user_id: user.id, passage_id: passageId, score: compCorrect, xp_earned: xpEarned, pronunciation_avg: avgPron,
         });
       }
       const today = new Date().toISOString().slice(0, 10);
@@ -179,7 +361,10 @@
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
     }
 
-    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    document.getElementById('exitBtn').addEventListener('click', () => {
+      if (recognition) { try { recognition.stop(); } catch (e) {} }
+      window.location.href = 'dashboard.html';
+    });
 
     (async () => {
       user = await requireAuth();

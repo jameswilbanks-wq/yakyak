@@ -9,6 +9,7 @@ const TRANSLATE_GRADE_URL = SUPABASE_URL + "/functions/v1/grade-translation";
 const ROLEPLAY_SCENARIOS_URL = SUPABASE_URL + "/functions/v1/generate-roleplay-scenarios";
 const ROLEPLAY_REPLY_URL = SUPABASE_URL + "/functions/v1/roleplay-reply";
 const INPUT_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-input-passage";
+const GRADE_PRONUNCIATION_URL = SUPABASE_URL + "/functions/v1/grade-pronunciation";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
