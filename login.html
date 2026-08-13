@@ -14,23 +14,29 @@
       <h1 style="font-size:28px;margin-bottom:6px;">Hey! I'm Yak.</h1>
       <p class="text-dim" id="subhead" style="margin-bottom:28px;font-size:15px;"></p>
 
-      <div id="emailStep">
+      <div id="formStep">
         <label class="label" id="emailLabel">Email</label>
         <input id="email" type="email" class="input" style="margin-bottom:16px;" autocomplete="email">
-        <p id="emailError" class="text-dim" style="color:var(--danger);font-size:13px;min-height:18px;margin:0 0 8px;"></p>
-        <button id="sendLinkBtn" class="btn-primary" style="width:100%;justify-content:center;">Send me a sign-in link</button>
+
+        <label class="label" id="passwordLabel">Password</label>
+        <input id="password" type="password" class="input" style="margin-bottom:8px;" autocomplete="current-password">
+
+        <p id="formError" class="text-dim" style="color:var(--danger);font-size:13px;min-height:18px;margin:8px 0;"></p>
+
+        <button id="submitBtn" class="btn-primary" style="width:100%;justify-content:center;margin-top:4px;">Sign in</button>
+
+        <p style="text-align:center;margin-top:20px;font-size:13.5px;">
+          <span id="toggleText" class="text-dim">New here?</span>
+          <button id="toggleModeBtn" class="btn-ghost" style="display:inline;padding:0;text-decoration:underline;">Create an account</button>
+        </p>
       </div>
 
-      <div id="sentStep" style="display:none;">
+      <div id="confirmStep" style="display:none;">
         <div class="card" style="text-align:center;">
           <div style="font-size:30px;">📬</div>
-          <p class="text-dim" id="checkEmailMsg" style="margin-top:10px;font-size:14px;"></p>
+          <p class="text-dim" id="confirmMsg" style="margin-top:10px;font-size:14px;"></p>
         </div>
-        <p style="text-align:center;margin-top:18px;">
-          <button id="resendBtn" class="btn-ghost" style="display:inline;padding:0;text-decoration:underline;font-size:13px;">Resend</button>
-          <span style="margin:0 6px;color:var(--text-faint);">·</span>
-          <button id="backBtn" class="btn-ghost" style="display:inline;padding:0;text-decoration:underline;font-size:13px;">Use a different email</button>
-        </p>
+        <button id="backToFormBtn" class="btn-ghost" style="width:100%;justify-content:center;margin-top:16px;text-decoration:underline;">Back</button>
       </div>
     </div>
   </div>
@@ -39,57 +45,86 @@
   <script src="i18n.js"></script>
   <script>
     document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
-    document.getElementById('subhead').textContent = t('lg.subtitle');
-    document.getElementById('emailLabel').textContent = t('lg.emailLabel');
-    document.getElementById('email').placeholder = t('lg.emailPlaceholder');
-    document.getElementById('sendLinkBtn').textContent = t('lg.sendLink');
-    document.getElementById('resendBtn').textContent = t('lg.resend');
-    document.getElementById('backBtn').textContent = t('lg.useAnotherEmail');
 
-    let currentEmail = '';
-
+    let mode = 'signin'; // or 'signup'
     const emailEl = document.getElementById('email');
-    const emailError = document.getElementById('emailError');
-    const sendLinkBtn = document.getElementById('sendLinkBtn');
-    const emailStep = document.getElementById('emailStep');
-    const sentStep = document.getElementById('sentStep');
-    const checkEmailMsg = document.getElementById('checkEmailMsg');
-    const resendBtn = document.getElementById('resendBtn');
-    const backBtn = document.getElementById('backBtn');
+    const passwordEl = document.getElementById('password');
+    const formError = document.getElementById('formError');
+    const submitBtn = document.getElementById('submitBtn');
+    const toggleBtn = document.getElementById('toggleModeBtn');
+    const toggleText = document.getElementById('toggleText');
+    const subhead = document.getElementById('subhead');
+    const formStep = document.getElementById('formStep');
+    const confirmStep = document.getElementById('confirmStep');
+    const confirmMsg = document.getElementById('confirmMsg');
+    const backToFormBtn = document.getElementById('backToFormBtn');
+    const emailLabel = document.getElementById('emailLabel');
+    const passwordLabel = document.getElementById('passwordLabel');
+
+    function applyModeCopy() {
+      submitBtn.textContent = mode === 'signin' ? t('lg.signIn') : t('lg.createAccount');
+      toggleText.textContent = mode === 'signin' ? t('lg.newHere') : t('lg.alreadyHaveAccount');
+      toggleBtn.textContent = mode === 'signin' ? t('lg.createAccount') : t('lg.signInInstead');
+      subhead.textContent = t('lg.subtitle');
+    }
+
+    emailLabel.textContent = t('lg.emailLabel');
+    emailEl.placeholder = t('lg.emailPlaceholder');
+    passwordLabel.textContent = t('lg.passwordLabel');
+    passwordEl.placeholder = t('lg.passwordPlaceholder');
+    applyModeCopy();
+
+    toggleBtn.addEventListener('click', () => {
+      mode = mode === 'signin' ? 'signup' : 'signin';
+      formError.textContent = '';
+      applyModeCopy();
+    });
 
     function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
-    async function sendLink() {
+    async function submit() {
       const email = emailEl.value.trim();
-      emailError.textContent = '';
-      if (!isValidEmail(email)) { emailError.textContent = t('lg.errorEmail'); return; }
-      currentEmail = email;
-      sendLinkBtn.disabled = true;
-      sendLinkBtn.textContent = t('lg.sending');
+      const password = passwordEl.value;
+      formError.textContent = '';
+      if (!isValidEmail(email)) { formError.textContent = t('lg.errorEmail'); return; }
+      if (password.length < 6) { formError.textContent = t('lg.errorPasswordShort'); return; }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = mode === 'signin' ? t('lg.signingIn') : t('lg.creatingAccount');
+
       try {
-        const { error } = await db.auth.signInWithOtp({
-          email,
-          options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + '/index.html' },
-        });
-        if (error) throw error;
-        checkEmailMsg.textContent = t('lg.checkEmailLink', { email: currentEmail });
-        emailStep.style.display = 'none';
-        sentStep.style.display = 'block';
+        if (mode === 'signup') {
+          const { data, error } = await db.auth.signUp({ email, password });
+          if (error) throw error;
+          if (data.session) {
+            window.location.href = 'index.html';
+            return;
+          }
+          confirmMsg.textContent = t('lg.confirmEmailNotice');
+          formStep.style.display = 'none';
+          confirmStep.style.display = 'block';
+        } else {
+          const { error } = await db.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          window.location.href = 'index.html';
+          return;
+        }
       } catch (e) {
-        emailError.textContent = e.message || t('lg.errorGeneric');
+        formError.textContent = e.message || t('lg.errorGeneric');
       } finally {
-        sendLinkBtn.disabled = false;
-        sendLinkBtn.textContent = t('lg.sendLink');
+        submitBtn.disabled = false;
+        applyModeCopy();
       }
     }
 
-    sendLinkBtn.addEventListener('click', sendLink);
-    emailEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendLink(); });
-    resendBtn.addEventListener('click', sendLink);
-    backBtn.addEventListener('click', () => {
-      sentStep.style.display = 'none';
-      emailStep.style.display = 'block';
-      emailError.textContent = '';
+    submitBtn.addEventListener('click', submit);
+    passwordEl.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    emailEl.addEventListener('keydown', e => { if (e.key === 'Enter') passwordEl.focus(); });
+    backToFormBtn.addEventListener('click', () => {
+      confirmStep.style.display = 'none';
+      formStep.style.display = 'block';
+      mode = 'signin';
+      applyModeCopy();
     });
   </script>
 </body>
