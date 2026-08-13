@@ -158,3 +158,9 @@ a { color: var(--mint); }
 .sentence-progress .seg { flex:1; height:4px; border-radius:999px; background:var(--border); }
 .sentence-progress .seg.done { background:var(--mint); }
 .sentence-progress .seg.current { background:var(--accent); }
+
+.mic-btn-sm { width:36px; height:36px; border-radius:999px; border:none; background:var(--accent-soft); color:var(--accent-ink); font-size:15px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; flex-shrink:0; }
+.mic-btn-sm.recording { background:var(--danger); color:#fff; animation: micpulse 1.2s ease-out infinite; }
+.mic-btn-sm:disabled { opacity:.4; cursor:default; }
+.word-practice-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+.word-practice-row:last-child { border-bottom:none; }

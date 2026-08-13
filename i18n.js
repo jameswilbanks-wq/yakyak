@@ -71,6 +71,21 @@ const LEVEL_DESC_I18N = {
 function levelLabel(code) { return (LEVEL_LABEL_I18N[_locale] && LEVEL_LABEL_I18N[_locale][code]) || LEVEL_LABEL_I18N.en[code] || code; }
 function levelDesc(code) { return (LEVEL_DESC_I18N[_locale] && LEVEL_DESC_I18N[_locale][code]) || LEVEL_DESC_I18N.en[code] || ''; }
 
+// Interests/motivations are stored as canonical English ids (so AI prompts
+// stay in English regardless of UI language) — this maps an id back to its
+// translated display label for UI only.
+const INTEREST_KEY_MAP = {
+  Sports: 'int.sports', Travel: 'int.travel', Food: 'int.food', History: 'int.history',
+  Business: 'int.business', Technology: 'int.technology', Gaming: 'int.gaming', Movies: 'int.movies',
+  Fitness: 'int.fitness', Music: 'int.music', Family: 'int.family', Animals: 'int.animals',
+};
+const MOTIVATION_KEY_MAP = {
+  Travel: 'mot.travel', Relationships: 'mot.relationships', Business: 'mot.business', School: 'mot.school',
+  Citizenship: 'mot.citizenship', Conversation: 'mot.conversation', 'Reading books': 'mot.reading', 'Working abroad': 'mot.working_abroad',
+};
+function interestDisplay(id) { return INTEREST_KEY_MAP[id] ? t(INTEREST_KEY_MAP[id]) : id; }
+function motivationDisplay(id) { return MOTIVATION_KEY_MAP[id] ? t(MOTIVATION_KEY_MAP[id]) : id; }
+
 const STRINGS = {
 en: {
   // onboarding
@@ -236,6 +251,9 @@ en: {
   'in.hearCorrect': '🔊 Hear it read correctly',
   'in.hearMine': '▶️ Hear my recording',
   'in.retry': '↻ Retry',
+  'in.wordsToPractice': 'Words to practice',
+  'in.wordRecordHint': 'Tap to record just this word',
+  'in.wordPassed': 'Nailed it',
   'in.whatDoesMean': 'What does this mean, in {lang}?',
   'in.typeHere': 'Type it here…',
   'in.check': 'Check →',
@@ -422,6 +440,9 @@ es: {
   'in.hearCorrect': '🔊 Escucharlo bien pronunciado',
   'in.hearMine': '▶️ Escuchar mi grabación',
   'in.retry': '↻ Reintentar',
+  'in.wordsToPractice': 'Palabras para practicar',
+  'in.wordRecordHint': 'Toca para grabar solo esta palabra',
+  'in.wordPassed': 'Perfecto',
   'in.whatDoesMean': '¿Qué significa esto, en {lang}?',
   'in.typeHere': 'Escríbelo aquí…',
   'in.check': 'Comprobar →',
@@ -607,6 +628,9 @@ pt: {
   'in.hearCorrect': '🔊 Ouvir pronunciado corretamente',
   'in.hearMine': '▶️ Ouvir minha gravação',
   'in.retry': '↻ Repetir',
+  'in.wordsToPractice': 'Palavras para praticar',
+  'in.wordRecordHint': 'Toque para gravar só essa palavra',
+  'in.wordPassed': 'Perfeito',
   'in.whatDoesMean': 'O que isso significa, em {lang}?',
   'in.typeHere': 'Digite aqui…',
   'in.check': 'Verificar →',
@@ -792,6 +816,9 @@ fr: {
   'in.hearCorrect': '🔊 Écouter la prononciation correcte',
   'in.hearMine': '▶️ Écouter mon enregistrement',
   'in.retry': '↻ Réessayer',
+  'in.wordsToPractice': 'Mots à travailler',
+  'in.wordRecordHint': 'Touche pour enregistrer juste ce mot',
+  'in.wordPassed': 'Parfait',
   'in.whatDoesMean': 'Que veut dire cette phrase, en {lang} ?',
   'in.typeHere': 'Écris ici…',
   'in.check': 'Vérifier →',
@@ -977,6 +1004,9 @@ de: {
   'in.hearCorrect': '🔊 Richtige Aussprache anhören',
   'in.hearMine': '▶️ Meine Aufnahme anhören',
   'in.retry': '↻ Erneut versuchen',
+  'in.wordsToPractice': 'Wörter zum Üben',
+  'in.wordRecordHint': 'Tippen, um nur dieses Wort aufzunehmen',
+  'in.wordPassed': 'Perfekt',
   'in.whatDoesMean': 'Was bedeutet das, auf {lang}?',
   'in.typeHere': 'Hier eingeben…',
   'in.check': 'Prüfen →',
@@ -1162,6 +1192,9 @@ zh: {
   'in.hearCorrect': '🔊 听标准发音',
   'in.hearMine': '▶️ 听我的录音',
   'in.retry': '↻ 重试',
+  'in.wordsToPractice': '需要练习的单词',
+  'in.wordRecordHint': '点击只录这一个词',
+  'in.wordPassed': '完美',
   'in.whatDoesMean': '这句话用{lang}表达是什么意思？',
   'in.typeHere': '在这里输入…',
   'in.check': '检查 →',

@@ -23,6 +23,7 @@
     let sIdx = 0, sentenceResults = [], playedOnce = false;
     let recognition = null, isRecording = false;
     let mediaRecorder = null, mediaStream = null, audioChunks = [], liveTranscript = '';
+    let activeMicBtn = null, activeHint = null, activeTargetText = null, activeOnGraded = null;
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const micSupported = !!SR;
@@ -157,7 +158,11 @@
       }
 
       if (micSupported) {
-        document.getElementById('micBtn').addEventListener('click', toggleRecording);
+        document.getElementById('micBtn').addEventListener('click', () => {
+          const micBtn = document.getElementById('micBtn');
+          const hint = document.getElementById('micHint');
+          toggleRecording(micBtn, hint, sentence.target, (transcript, audioURL) => gradePronunciation(sentence.target, transcript, audioURL));
+        });
       } else {
         document.getElementById('skipMicBtn').addEventListener('click', () => {
           sentenceResults[sIdx] = { pronScore: null, pronFeedback: null };
@@ -166,24 +171,31 @@
       }
     }
 
-    async function toggleRecording() {
-      const micBtn = document.getElementById('micBtn');
-      const hint = document.getElementById('micHint');
+    // Generalized recording controls — used both for the main sentence-level
+    // mic button and for per-word retry mic buttons in the "words to
+    // practice" list. `targetText` is whatever is being read (a full
+    // sentence or a single word); `onGraded(transcript, audioURL)` fires once
+    // both the transcript and the playable audio blob are ready.
+    async function toggleRecording(micBtn, hint, targetText, onGraded) {
       if (isRecording) {
         stopRecording();
         return;
       }
-      await startRecording(micBtn, hint);
+      await startRecording(micBtn, hint, targetText, onGraded);
     }
 
     // Recording stays open until the learner taps the button again — no
     // auto-stop on a pause. Captures raw audio (MediaRecorder, for
     // play-back) alongside a running speech-recognition transcript (for
     // grading), in parallel.
-    async function startRecording(micBtn, hint) {
+    async function startRecording(micBtn, hint, targetText, onGraded) {
       const tts = langByCode(profile.target_language).tts;
       audioChunks = [];
       liveTranscript = '';
+      activeMicBtn = micBtn;
+      activeHint = hint;
+      activeTargetText = targetText;
+      activeOnGraded = onGraded;
 
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -202,9 +214,9 @@
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.onresult = (e) => {
-        let t = '';
-        for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-        liveTranscript = t;
+        let tr = '';
+        for (let i = 0; i < e.results.length; i++) tr += e.results[i][0].transcript;
+        liveTranscript = tr;
       };
       recognition.onerror = () => {}; // keep going — whatever we've captured is used when the learner stops
       recognition.start();
@@ -216,9 +228,10 @@
     }
 
     function stopRecording() {
-      const micBtn = document.getElementById('micBtn');
-      const hint = document.getElementById('micHint');
-      const sentence = passage.sentences[sIdx];
+      const micBtn = activeMicBtn;
+      const hint = activeHint;
+      const targetText = activeTargetText;
+      const onGraded = activeOnGraded;
       isRecording = false;
       micBtn.classList.remove('recording');
       micBtn.textContent = '🎙️';
@@ -227,7 +240,7 @@
 
       let recognitionDone = false, recorderDone = false, audioURL = null;
       const maybeFinish = () => {
-        if (recognitionDone && recorderDone) gradePronunciation(sentence.target, liveTranscript, audioURL);
+        if (recognitionDone && recorderDone) onGraded(liveTranscript, audioURL);
       };
 
       if (recognition) {
@@ -277,11 +290,46 @@
         if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
         result = data;
       } catch (e) {
-        result = { score: null, isGood: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
+        result = { score: null, isGood: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.', missedWords: [] };
       }
 
-      sentenceResults[sIdx] = { pronScore: result.score, pronFeedback: result.feedback, heard: transcript, audioURL };
+      sentenceResults[sIdx] = {
+        pronScore: result.score,
+        pronFeedback: result.feedback,
+        heard: transcript,
+        audioURL,
+        missedWords: Array.isArray(result.missedWords) ? result.missedWords : [],
+        wordPractice: {},
+      };
       renderPronFeedback();
+    }
+
+    // Grades a single retried word (targetSentence with one word makes the
+    // edge function skip missedWords detection and just score the word).
+    async function gradeWordPronunciation(word, transcript, audioURL, words, tts) {
+      const r = sentenceResults[sIdx];
+      let result;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GRADE_PRONUNCIATION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetSentence: word,
+            transcript,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+          }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        result = data;
+      } catch (e) {
+        result = { score: null, isGood: null, feedback: '' };
+      }
+      r.wordPractice[word] = { score: result.score, audioURL };
+      renderWordPracticeList(words, tts);
     }
 
     function renderPronFeedback() {
@@ -289,6 +337,7 @@
       const r = sentenceResults[sIdx];
       const tts = langByCode(profile.target_language).tts;
       const good = r.pronScore === null ? null : r.pronScore >= 75;
+      const missedWords = (r.missedWords || []).slice(0, 4);
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-body">
           ${renderProgress()}
@@ -307,6 +356,11 @@
             <button class="btn-ghost" id="hearCorrectBtn">${t('in.hearCorrect')}</button>
             ${r.audioURL ? `<button class="btn-ghost" id="hearMineBtn">${t('in.hearMine')}</button>` : ''}
           </div>
+          ${missedWords.length ? `
+            <div class="card" style="margin-top:18px;">
+              <span class="label" style="margin-bottom:4px;">${t('in.wordsToPractice')}</span>
+              <div id="wordPracticeList"></div>
+            </div>` : ''}
           <div style="display:flex;gap:10px;margin-top:22px;">
             <button class="btn-ghost" id="retryReadBtn">${t('in.retry')}</button>
             <button class="btn-primary" id="toComprehendBtn" style="flex:1;justify-content:center;">${t('in.continueArrow')}</button>
@@ -318,6 +372,49 @@
       }
       document.getElementById('retryReadBtn').addEventListener('click', renderReadStep);
       document.getElementById('toComprehendBtn').addEventListener('click', renderComprehendStep);
+
+      if (missedWords.length) renderWordPracticeList(missedWords, tts);
+    }
+
+    // Renders (and re-renders, after each per-word retry) the list of
+    // mispronounced words with a repeatable "hear it" button and an
+    // optional per-word mic to retry just that one word. Entirely optional —
+    // the main Continue/Retry-sentence buttons above are unaffected.
+    function renderWordPracticeList(words, tts) {
+      const r = sentenceResults[sIdx];
+      const list = document.getElementById('wordPracticeList');
+      if (!list) return;
+      list.innerHTML = words.map((w, i) => {
+        const wp = r.wordPractice[w];
+        const passed = wp && wp.score !== null && wp.score >= 75;
+        const scoreNote = passed
+          ? `<span class="text-faint" style="font-size:11.5px;color:var(--mint);">✓ ${t('in.wordPassed')}</span>`
+          : (wp && wp.score !== null ? `<span class="text-faint" style="font-size:11.5px;">${wp.score}</span>` : '');
+        return `
+          <div class="word-practice-row">
+            <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+              <span style="font-weight:700;font-family:var(--font-display);font-size:15px;">${w}</span>
+              ${scoreNote}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button class="btn-ghost" data-word-hear="${i}" style="padding:4px 10px;font-size:12px;">🔊</button>
+              ${micSupported ? `<button class="mic-btn-sm" data-word-mic="${i}">🎙️</button>` : ''}
+            </div>
+          </div>
+          ${micSupported ? `<p class="text-faint" id="wordHint${i}" style="font-size:11px;margin:2px 0 6px;">${t('in.wordRecordHint')}</p>` : ''}
+        `;
+      }).join('');
+
+      words.forEach((w, i) => {
+        list.querySelector(`[data-word-hear="${i}"]`).addEventListener('click', () => speak(w, tts));
+        const micBtn = list.querySelector(`[data-word-mic="${i}"]`);
+        if (micBtn) {
+          const hint = document.getElementById('wordHint' + i);
+          micBtn.addEventListener('click', () => {
+            toggleRecording(micBtn, hint, w, (transcript, audioURL) => gradeWordPronunciation(w, transcript, audioURL, words, tts));
+          });
+        }
+      });
     }
 
     function renderComprehendStep() {
