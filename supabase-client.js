@@ -11,6 +11,7 @@ const ROLEPLAY_REPLY_URL = SUPABASE_URL + "/functions/v1/roleplay-reply";
 const INPUT_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-input-passage";
 const GRADE_PRONUNCIATION_URL = SUPABASE_URL + "/functions/v1/grade-pronunciation";
 const EVALUATE_PROGRESS_URL = SUPABASE_URL + "/functions/v1/evaluate-progress";
+const GENERATE_VOCAB_URL = SUPABASE_URL + "/functions/v1/generate-vocab-batch";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -23,6 +24,31 @@ const LEVELS = [
   { code: 'C1', label: 'Advanced' },
   { code: 'C2', label: 'Mastery' },
 ];
+
+// Rough word-family targets per CEFR level (based on published vocabulary-
+// size research — figures vary by source, these are reasonable midpoints).
+// Used only for a friendly progress readout, not a hard requirement.
+const VOCAB_LEVEL_TARGETS = {
+  'Pre-A1': 300, 'A1': 800, 'A2': 1500, 'B1': 2500, 'B2': 4000, 'C1': 6000, 'C2': 9000,
+};
+
+// Counts how many vocab words at this level the learner has actually
+// started tracking (i.e. has a skill_mastery row for) — a simple, honest
+// "words learned so far" figure rather than anything stricter. skill_ref_id
+// is a polymorphic pointer (grammar_points or vocab_items depending on
+// skill_type), so there's no FK for PostgREST to embed through — this does
+// the join as two plain queries instead.
+async function getVocabProgress(userId, targetLanguage, level) {
+  const target = VOCAB_LEVEL_TARGETS[level] || 1000;
+  const { data: mastery } = await db.from('skill_mastery')
+    .select('skill_ref_id').eq('user_id', userId).eq('skill_type', 'vocab');
+  const ids = (mastery || []).map(m => m.skill_ref_id).filter(Boolean);
+  if (!ids.length) return { learned: 0, target };
+  const { count } = await db.from('vocab_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('target_language', targetLanguage).eq('level', level).in('id', ids);
+  return { learned: count || 0, target };
+}
 
 const LEVEL_DESCRIPTIONS = {
   'Pre-A1': 'Just starting out — a few words here and there.',

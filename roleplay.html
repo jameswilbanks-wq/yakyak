@@ -19,9 +19,13 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
-    const MAX_TURNS = 8;
+    const MAX_TURNS = 12;
     let user = null, profile = null, scenarios = [], scenario = null, sessionId = null, sessionTopic = null;
     let transcript = [], turnCount = 0, goalCompleted = false, grammarFlagged = [], busy = false;
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micSupported = !!SR;
+    let recognition = null, isRecording = false;
 
     function renderLoading(message) {
       document.getElementById('roleplayBody').innerHTML = `
@@ -126,7 +130,9 @@
       document.getElementById('roleplayBody').innerHTML = `
         ${goalCompleted ? `<div class="goal-banner">${t('rp.goalReachedBanner')}</div>` : ''}
         <div class="chat-scroll" id="chatScroll"></div>
+        <p class="text-faint" id="micHint" style="font-size:11.5px;padding:0 20px;min-height:14px;"></p>
         <div class="chat-input-bar">
+          ${micSupported ? `<button class="mic-btn-sm" id="micBtn">🎙️</button>` : ''}
           <input id="chatInput" class="input" placeholder="${t('rp.typeReply', { lang: langDisplay(profile.target_language) })}">
           <button class="btn-primary" id="sendBtn">${t('rp.send')}</button>
         </div>
@@ -142,21 +148,83 @@
       sendBtn.addEventListener('click', send);
       input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
       document.getElementById('finishBtn').addEventListener('click', finishSession);
+      if (micSupported) {
+        document.getElementById('micBtn').addEventListener('click', toggleRecording);
+      }
     }
 
     function renderTranscript() {
       const scroll = document.getElementById('chatScroll');
       if (!scroll) return;
+      const tts = langByCode(profile.target_language).tts;
       scroll.innerHTML = transcript.map(t => `
         <div class="chat-line${t.speaker === 'user' ? ' user' : ''}">
-          <div>${t.text}</div>
+          <div style="display:flex;align-items:flex-start;gap:6px;">
+            ${t.speaker === 'ai' ? `<button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(t.text)}" style="margin-top:-2px;">🔊</button>` : ''}
+            <div>${t.text}</div>
+          </div>
           ${t.native ? `<div class="native">${t.native}</div>` : ''}
           ${t.correction ? `<div class="correction-note">${t.correction}</div>` : ''}
         </div>`).join('');
+      scroll.querySelectorAll('[data-speak]').forEach(btn => {
+        btn.addEventListener('click', () => speak(decodeURIComponent(btn.dataset.speak), tts));
+      });
       scroll.scrollTop = scroll.scrollHeight;
     }
 
+    // Mic input: browser speech recognition (same approach as input.html's
+    // pronunciation recorder) fills the chat text box with what it heard —
+    // the learner still reviews/edits and taps Send themselves, so a
+    // misheard word never gets sent by accident.
+    function toggleRecording() {
+      if (isRecording) { stopRecording(); return; }
+      startRecording();
+    }
+
+    function startRecording() {
+      const micBtn = document.getElementById('micBtn');
+      const hint = document.getElementById('micHint');
+      const input = document.getElementById('chatInput');
+      if (!micBtn || !hint || !input) return;
+      const tts = langByCode(profile.target_language).tts;
+
+      recognition = new SR();
+      recognition.lang = tts;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (e) => {
+        let tr = '';
+        for (let i = 0; i < e.results.length; i++) tr += e.results[i][0].transcript;
+        input.value = tr;
+      };
+      recognition.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          hint.textContent = t('rp.micPermissionError');
+          stopRecording();
+        }
+      };
+      try {
+        recognition.start();
+      } catch (e) { return; }
+
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.textContent = '⏹️';
+      hint.textContent = t('rp.listening');
+    }
+
+    function stopRecording() {
+      const micBtn = document.getElementById('micBtn');
+      const hint = document.getElementById('micHint');
+      isRecording = false;
+      if (recognition) { try { recognition.stop(); } catch (e) {} }
+      if (micBtn) { micBtn.classList.remove('recording'); micBtn.textContent = '🎙️'; }
+      if (hint) hint.textContent = '';
+    }
+
     async function sendMessage(text) {
+      if (isRecording) stopRecording();
       busy = true;
       const input = document.getElementById('chatInput');
       const sendBtn = document.getElementById('sendBtn');
@@ -225,6 +293,7 @@
     }
 
     async function finishSession() {
+      if (isRecording) stopRecording();
       const xpEarned = 20 + (goalCompleted ? 20 : 0);
       document.getElementById('roleplayBody').innerHTML = `
         <div class="lesson-center">
@@ -262,7 +331,10 @@
       if (levelUp) document.getElementById('levelUpSlot').innerHTML = celebrationHTML(levelUp);
     }
 
-    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    document.getElementById('exitBtn').addEventListener('click', () => {
+      if (isRecording) stopRecording();
+      window.location.href = 'dashboard.html';
+    });
 
     (async () => {
       user = await requireAuth();

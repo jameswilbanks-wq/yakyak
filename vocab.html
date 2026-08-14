@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Vocabulary</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <button class="icon-btn" id="exitBtn">✕</button>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="vocabBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    let user = null, profile = null, words = [], learnIdx = 0, quizIdx = 0, quizOrder = [], results = [];
+
+    function renderLoading() {
+      document.getElementById('vocabBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('vc.buildingBatch')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderError(message) {
+      document.getElementById('vocabBody').innerHTML = `
+        <div class="lesson-center error-box">
+          <div style="font-size:30px;">⚠️</div>
+          <p style="font-weight:700;">${t('vc.couldntBuild')}</p>
+          <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
+        </div>`;
+      document.getElementById('retryBtn').addEventListener('click', loadBatch);
+    }
+
+    async function loadBatch() {
+      renderLoading();
+      try {
+        const avoid = await fetchRecentValues('vocab_items', 'target_text', profile.target_language, profile.current_level, 200);
+        const token = await getAuthToken();
+        const res = await fetch(GENERATE_VOCAB_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            level: profile.current_level,
+            avoid,
+            count: 8,
+          }),
+        });
+        const raw = await res.text();
+        if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.words || !data.words.length) throw new Error('No words returned');
+
+        words = [];
+        for (const w of data.words) {
+          const { data: row } = await db.from('vocab_items').insert({
+            target_language: profile.target_language,
+            native_language: profile.native_language,
+            target_text: w.targetText,
+            native_text: w.nativeText,
+            level: profile.current_level,
+            tags: w.partOfSpeech ? [w.partOfSpeech] : [],
+          }).select('id').single();
+          words.push({
+            id: row ? row.id : null,
+            targetText: w.targetText,
+            nativeText: w.nativeText,
+            partOfSpeech: w.partOfSpeech || '',
+            exampleTarget: w.exampleTarget || '',
+            exampleNative: w.exampleNative || '',
+          });
+        }
+
+        learnIdx = 0;
+        renderLearnCard();
+      } catch (e) {
+        renderError(e.message || 'Unknown error');
+      }
+    }
+
+    function renderLearnCard() {
+      const w = words[learnIdx];
+      const tts = langByCode(profile.target_language).tts;
+      document.getElementById('topLabel').textContent = `${t('vc.learning')} · ${learnIdx + 1}/${words.length}`;
+      document.getElementById('vocabBody').innerHTML = `
+        <div class="lesson-body">
+          <div class="card" style="text-align:center;">
+            ${w.partOfSpeech ? `<span class="chip-mini" style="margin:0 auto 12px;">${w.partOfSpeech}</span>` : ''}
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+              <button class="icon-btn icon-btn-sm" id="speakBtn">🔊</button>
+              <p style="font-size:23px;font-weight:800;font-family:var(--font-display);">${w.targetText}</p>
+            </div>
+            <p class="text-dim" style="font-size:15px;margin-top:6px;">${w.nativeText}</p>
+            ${w.exampleTarget ? `
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border);text-align:left;">
+                <p style="font-size:14px;font-weight:600;">${w.exampleTarget}</p>
+                <p class="text-faint" style="font-size:12.5px;margin-top:3px;">${w.exampleNative}</p>
+              </div>` : ''}
+          </div>
+          <button class="btn-primary" id="nextLearnBtn" style="margin-top:22px;width:100%;justify-content:center;">${learnIdx + 1 < words.length ? t('vc.next') : t('vc.startQuiz')}</button>
+        </div>`;
+      document.getElementById('speakBtn').addEventListener('click', () => speak(w.targetText, tts));
+      document.getElementById('nextLearnBtn').addEventListener('click', () => {
+        if (learnIdx + 1 < words.length) { learnIdx++; renderLearnCard(); }
+        else startQuiz();
+      });
+    }
+
+    function startQuiz() {
+      quizIdx = 0;
+      results = [];
+      quizOrder = words.map((_, i) => i).sort(() => Math.random() - 0.5);
+      renderQuiz();
+    }
+
+    function renderQuiz() {
+      const w = words[quizOrder[quizIdx]];
+      const distractors = words.filter(x => x !== w).map(x => x.nativeText).sort(() => Math.random() - 0.5).slice(0, 3);
+      const options = [...distractors, w.nativeText].sort(() => Math.random() - 0.5);
+
+      document.getElementById('topLabel').textContent = `${t('vc.quiz')} · ${quizIdx + 1}/${words.length}`;
+      document.getElementById('vocabBody').innerHTML = `
+        <div class="lesson-body">
+          <span class="text-faint" style="font-size:12px;">${t('vc.whatDoesMean')}</span>
+          <h2 style="font-size:23px;margin:8px 0 18px;font-family:var(--font-display);">${w.targetText}</h2>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="optionsList"></div>
+          <div id="nextQBtn"></div>
+        </div>`;
+      const list = document.getElementById('optionsList');
+      list.innerHTML = options.map((opt, i) => `<button class="option" data-opt="${encodeURIComponent(opt)}">${opt}</button>`).join('');
+      list.querySelectorAll('.option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const chosen = decodeURIComponent(btn.dataset.opt);
+          const correct = chosen === w.nativeText;
+          results.push({ word: w, correct });
+          list.querySelectorAll('.option').forEach(b => {
+            b.disabled = true;
+            const val = decodeURIComponent(b.dataset.opt);
+            if (val === w.nativeText) b.classList.add('correct');
+            else if (b === btn) b.classList.add('wrong');
+          });
+          document.getElementById('nextQBtn').innerHTML = `<button class="btn-primary" id="nextBtn" style="margin-top:20px;width:100%;justify-content:center;">${quizIdx + 1 < words.length ? t('vc.nextQuestion') : t('vc.seeResults')}</button>`;
+          document.getElementById('nextBtn').addEventListener('click', () => {
+            if (quizIdx + 1 < words.length) { quizIdx++; renderQuiz(); }
+            else finishSession();
+          });
+        });
+      });
+    }
+
+    async function finishSession() {
+      const correctCount = results.filter(r => r.correct).length;
+      const xpEarned = 10 + correctCount * 6;
+
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('vocabBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:40px;">${correctCount === words.length ? '🎉' : '📚'}</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('vc.batchComplete')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('vc.correctOfTotal', { c: correctCount, t: words.length })}</p>
+          <p class="text-faint" style="font-size:12px;margin-top:6px;">${t('vc.addedToReview')}</p>
+          <div id="levelUpSlot" style="width:100%;"></div>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('vc.backToHome')}</button>
+        </div>`;
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+      for (const r of results) {
+        if (r.word.id) await recordSkillResult(user.id, 'vocab', r.word.id, r.correct);
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = profile.last_activity_date === today ? profile.streak
+        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
+      await db.from('profiles').update({
+        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
+      }).eq('id', user.id);
+      profile.xp += xpEarned; profile.streak = newStreak; profile.last_activity_date = today;
+
+      const levelUp = await recordActivityAndMaybeEvaluate(user, profile);
+      if (levelUp) document.getElementById('levelUpSlot').innerHTML = celebrationHTML(levelUp);
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+      document.getElementById('topLabel').textContent = '';
+      loadBatch();
+    })();
+  </script>
+</body>
+</html>

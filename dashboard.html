@@ -64,6 +64,7 @@
 
       const { count: completionCount } = await db
         .from('lesson_completions').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+      const vocabProgress = await getVocabProgress(user.id, profile.target_language, profile.current_level);
 
       const learning = langByCode(profile.target_language);
       const content = document.getElementById('dashContent');
@@ -88,10 +89,10 @@
         </div>
 
         <div class="card">
-          <span class="chip-mini">${t('db.todaysLesson')} · ${profile.daily_minutes} min</span>
-          <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.readyWhenYouAre')}</h2>
-          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.freshLesson', { lang: langDisplay(learning.code) })}</p>
-          <button class="btn-primary" id="startLessonBtn">${t('db.startLesson')}</button>
+          <span class="chip-mini">🗣️ ${t('db.naturalDialogChip')}</span>
+          <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.naturalDialogTitle')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.naturalDialogDesc', { lang: langDisplay(learning.code) })}</p>
+          <button class="btn-primary" id="startLessonBtn">${t('db.startTalking')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
@@ -109,6 +110,16 @@
         </div>
 
         <div class="card" style="margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+            <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">📚 ${t('db.vocabChip')}</span>
+            <span class="text-faint" style="font-size:11px;">${t('db.vocabProgress', { learned: vocabProgress.learned, target: vocabProgress.target, level: profile.current_level })}</span>
+          </div>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.vocabTitle')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.vocabDesc', { lang: langDisplay(learning.code) })}</p>
+          <button class="btn-primary" id="startVocabBtn">${t('db.startVocab')}</button>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
             <span class="label" style="margin-bottom:0;">${t('db.yourPath')}</span>
             <span class="text-faint" style="font-size:11px;">${t('db.lessonsCompleted', { n: completionCount || 0 })}</span>
@@ -121,9 +132,10 @@
         ? tierLabel(profile.assessed_level)
         : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });
       document.getElementById('evaluateBtn').addEventListener('click', () => openProgressModal(profile));
-      document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'lesson.html'; });
+      document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
       document.getElementById('startTranslateBtn').addEventListener('click', () => { window.location.href = 'translate.html'; });
       document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
+      document.getElementById('startVocabBtn').addEventListener('click', () => { window.location.href = 'vocab.html'; });
       renderLadder(document.getElementById('ladderSlot'), {
         mode: 'display', current: profile.current_level, target: profile.target_level, compact: true, progress: 40,
       });
