@@ -26,12 +26,10 @@
       { id: 'Citizenship', key: 'mot.citizenship' }, { id: 'Conversation', key: 'mot.conversation' },
       { id: 'Reading books', key: 'mot.reading' }, { id: 'Working abroad', key: 'mot.working_abroad' },
     ];
-    const TIME_OPTIONS = [
-      { id: 5, key: 'time.5' },
-      { id: 15, key: 'time.15' },
-      { id: 30, key: 'time.30' },
-      { id: 60, key: 'time.60' },
-    ];
+    // How-much-time-per-day is no longer asked here — it's now a per-session
+    // question at the top of the "build my plan" flow (see TIME_OPTIONS in
+    // supabase-client.js), since the right answer varies day to day more
+    // than it's a fixed trait to set once at signup.
     const STYLES = [
       { id: 'visual', key: 'style.visual' },
       { id: 'reading', key: 'style.reading' },
@@ -44,13 +42,13 @@
     // one-time onboarding pick meant every lesson forever used the same
     // narrow topic list. See INTERESTS/renderTopicPicker in supabase-client.js.
 
-    const steps = ['name', 'level', 'motivation', 'time', 'style'];
+    const steps = ['name', 'level', 'motivation', 'style'];
     let stepIndex = 0;
     let user = null;
 
     const form = {
       name: '', native: 'English', learning: null, current: null, target: null,
-      motivations: [], time: null, style: null,
+      motivations: [], style: null,
     };
 
     function valid() {
@@ -58,7 +56,6 @@
         case 'name': return form.name.trim().length > 0 && form.learning !== null;
         case 'level': return form.current && form.target;
         case 'motivation': return form.motivations.length > 0;
-        case 'time': return form.time !== null;
         case 'style': return form.style !== null;
       }
     }
@@ -162,21 +159,6 @@
         grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { toggleArr(form.motivations, b.dataset.m); renderStep(); }));
       }
 
-      if (s === 'time') {
-        content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.howMuchTime')}</h1>
-          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.sizeEvery')}</p>
-          <div style="display:flex;flex-direction:column;gap:10px;" id="timeList"></div>
-        `;
-        const list = document.getElementById('timeList');
-        list.innerHTML = TIME_OPTIONS.map(opt => `
-          <button class="row-option${form.time === opt.id ? ' active' : ''}" data-t="${opt.id}">
-            <span style="font-weight:700;font-size:15px;font-family:var(--font-display);">${t(opt.key + '.label')}</span>
-            <span class="text-faint" style="font-size:12.5px;">${t(opt.key + '.hint')}</span>
-          </button>`).join('');
-        list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.time = parseInt(b.dataset.t); renderStep(); }));
-      }
-
       if (s === 'style') {
         content.innerHTML = `
           <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.learnBest')}</h1>
@@ -221,7 +203,6 @@
         target_language: form.learning.code,
         current_level: form.current,
         target_level: form.target,
-        daily_minutes: form.time,
         learning_style: form.style,
         motivations: form.motivations,
       });

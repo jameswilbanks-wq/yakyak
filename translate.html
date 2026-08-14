@@ -21,6 +21,12 @@
   <script>
     let user = null, profile = null, exercises = [], attempts = [], sessionTopic = null;
     let idx = 0, submitted = false;
+    let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
+
+    function planStepPrefix() {
+      if (!planCtx) return '';
+      return t('pl.stepOfTotal', { i: planCtx.plan.currentIndex + 1, n: planCtx.plan.steps.length });
+    }
 
     function renderLoading() {
       document.getElementById('translateBody').innerHTML = `
@@ -47,6 +53,7 @@
       try {
         const avoid = await fetchRecentValues('translation_exercises', 'source_text', profile.target_language, profile.current_level, 10);
         const token = await getAuthToken();
+        const count = planCtx ? Math.min(Math.max(Math.round(planCtx.step.minutes / 15 * 6), 3), 10) : undefined;
         const res = await fetch(TRANSLATE_GENERATE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -57,6 +64,7 @@
             interest: sessionTopic || 'daily life',
             angle: randomAngle(),
             avoid,
+            ...(count ? { count } : {}),
           }),
         });
         const raw = await res.text();
@@ -117,7 +125,7 @@
       const learning = langByCode(profile.target_language);
       const fromTarget = ex.sourceLang === 'target';
 
-      document.getElementById('progressLabel').textContent = `${idx + 1}/${exercises.length}`;
+      document.getElementById('progressLabel').textContent = `${planStepPrefix()}${idx + 1}/${exercises.length}`;
       const nativeDisplay = nativeLangDisplay(profile.native_language);
       const targetDisplay = langDisplay(learning.code);
       document.getElementById('translateBody').innerHTML = `
@@ -228,9 +236,12 @@
               <p class="text-faint" style="font-size:11.5px;margin-top:6px;">${t('tr.comeBackAround')}</p>
             </div>` : ''}
           <div id="levelUpSlot" style="width:100%;"></div>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('tr.backToHome')}</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('tr.backToHome')}</button>
         </div>`;
-      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      document.getElementById('doneBtn').addEventListener('click', () => {
+        if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
+        else { window.location.href = 'dashboard.html'; }
+      });
 
       const today = new Date().toISOString().slice(0, 10);
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -254,15 +265,21 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
+      planCtx = isPlanStepActive('translate');
       document.getElementById('progressLabel').textContent = '';
-      renderTopicPicker(document.getElementById('translateBody'), {
-        initial: getLastTopics(profile),
-        onStart: async (selection) => {
-          await saveLastTopics(user.id, selection);
-          sessionTopic = pickTopicForSession(selection);
-          loadSet();
-        },
-      });
+      if (planCtx) {
+        sessionTopic = pickTopicForSession(getLastTopics(profile));
+        loadSet();
+      } else {
+        renderTopicPicker(document.getElementById('translateBody'), {
+          initial: getLastTopics(profile),
+          onStart: async (selection) => {
+            await saveLastTopics(user.id, selection);
+            sessionTopic = pickTopicForSession(selection);
+            loadSet();
+          },
+        });
+      }
     })();
   </script>
 </body>

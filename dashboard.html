@@ -23,6 +23,15 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
+    const MODULE_INFO = {
+      vocab: { icon: '📚', nameKey: 'db.vocabChip' },
+      translate: { icon: '🔤', nameKey: 'db.translateDiagnose' },
+      roleplay: { icon: '🗣️', nameKey: 'db.naturalDialogChip' },
+      input: { icon: '📖', nameKey: 'db.listenRead' },
+    };
+
+    let user = null, profile = null, completionCount = 0, vocabProgress = { learned: 0, target: 1000 };
+
     function openProgressModal(profile) {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -49,32 +58,14 @@
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     }
 
-    (async () => {
-      const user = await requireAuth();
-      if (!user) return;
-
-      const profile = await getProfile(user.id);
-      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
-      setLocale(profile.native_language);
-      document.getElementById('loadingLabel').textContent = t('db.loading');
-      document.getElementById('navHome').querySelector('span').textContent = t('nav.home');
-      document.getElementById('navProgress').querySelector('span').textContent = t('nav.progress');
-      document.getElementById('navTalk').querySelector('span').textContent = t('nav.talk');
-      document.getElementById('navSignoutLabel').textContent = t('nav.signout');
-
-      const { count: completionCount } = await db
-        .from('lesson_completions').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
-      const vocabProgress = await getVocabProgress(user.id, profile.target_language, profile.current_level);
-
-      const learning = langByCode(profile.target_language);
-      const content = document.getElementById('dashContent');
-      content.innerHTML = `
+    function renderHeader() {
+      document.getElementById('dashContent').innerHTML = `
         <div class="dash-header">
           <div style="display:flex;align-items:center;gap:10px;">
             <div id="mascotSlot" style="width:38px;"></div>
             <div>
               <h1 style="font-size:22px;">${greeting()}, ${profile.name}.</h1>
-              <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level} · ${profile.daily_minutes} ${t('db.minPerDay')}</p>
+              <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level}</p>
             </div>
           </div>
           <div style="display:flex;gap:8px;">
@@ -88,6 +79,146 @@
           <button class="btn-ghost" id="evaluateBtn">🎯 ${t('lvl.evaluateBtn')}</button>
         </div>
 
+        <div id="mainSlot"></div>
+      `;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(38);
+      document.getElementById('tierBadge').textContent = profile.assessed_level
+        ? tierLabel(profile.assessed_level)
+        : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });
+      document.getElementById('evaluateBtn').addEventListener('click', () => openProgressModal(profile));
+    }
+
+    // --- Step 1: à la carte vs. build-my-plan fork (shown every visit) ---
+    function renderFork() {
+      const slot = document.getElementById('mainSlot');
+      slot.innerHTML = `
+        <button class="card" id="forkPlanBtn" style="text-align:left;width:100%;cursor:pointer;border:1px solid var(--accent);">
+          <span class="chip-mini">🤖 ${t('pl.forkPlanChip')}</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('pl.forkPlanTitle')}</h2>
+          <p class="text-dim" style="font-size:13.5px;">${t('pl.forkPlanDesc')}</p>
+        </button>
+        <button class="card" id="forkCarteBtn" style="text-align:left;width:100%;cursor:pointer;margin-top:14px;">
+          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">🍽️ ${t('pl.forkCarteChip')}</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('pl.forkCarteTitle')}</h2>
+          <p class="text-dim" style="font-size:13.5px;">${t('pl.forkCarteDesc')}</p>
+        </button>
+      `;
+      document.getElementById('forkPlanBtn').addEventListener('click', renderTimePicker);
+      document.getElementById('forkCarteBtn').addEventListener('click', renderALaCarte);
+    }
+
+    // --- Step 2: pick a time budget -----------------------------------
+    function renderTimePicker() {
+      const slot = document.getElementById('mainSlot');
+      let chosen = TIME_OPTIONS.some(o => o.id === profile.daily_minutes) ? profile.daily_minutes : null;
+      slot.innerHTML = `
+        <div class="lesson-body" style="padding:0;">
+          <h1 style="font-size:22px;margin-bottom:6px;">${t('pl.howMuchTime')}</h1>
+          <p class="text-dim" style="margin-bottom:18px;font-size:13.5px;">${t('pl.sizeToday')}</p>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="timeList"></div>
+          <button class="btn-primary" id="buildPlanBtn" style="margin-top:20px;width:100%;justify-content:center;" ${chosen ? '' : 'disabled'}>${t('pl.buildMyPlan')}</button>
+          <button class="btn-ghost" id="backToForkBtn" style="width:100%;justify-content:center;margin-top:8px;">${t('pl.back')}</button>
+        </div>`;
+      const draw = () => {
+        document.getElementById('timeList').innerHTML = TIME_OPTIONS.map(opt => `
+          <button class="row-option${chosen === opt.id ? ' active' : ''}" data-t="${opt.id}">
+            <span style="font-weight:700;font-size:15px;font-family:var(--font-display);">${t(opt.key + '.label')}</span>
+            <span class="text-faint" style="font-size:12.5px;">${t(opt.key + '.hint')}</span>
+          </button>`).join('');
+        document.querySelectorAll('#timeList .row-option').forEach(b => b.addEventListener('click', () => {
+          chosen = parseInt(b.dataset.t);
+          document.getElementById('buildPlanBtn').disabled = false;
+          draw();
+        }));
+      };
+      draw();
+      document.getElementById('backToForkBtn').addEventListener('click', renderFork);
+      document.getElementById('buildPlanBtn').addEventListener('click', () => buildPlan(chosen));
+    }
+
+    // --- Step 3: generate + preview the plan ----------------------------
+    async function buildPlan(minutes) {
+      const slot = document.getElementById('mainSlot');
+      slot.innerHTML = `
+        <div class="lesson-center" style="padding:40px 0;">
+          <div id="mascotSlot2" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('pl.building')}</p>
+        </div>`;
+      document.getElementById('mascotSlot2').innerHTML = mascotHTML(52);
+
+      await db.from('profiles').update({ daily_minutes: minutes }).eq('id', user.id);
+      profile.daily_minutes = minutes;
+
+      try {
+        const stats = await gatherProgressStats(user.id, profile.target_language);
+        const token = await getAuthToken();
+        const res = await fetch(GENERATE_PLAN_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            level: profile.current_level,
+            minutes,
+            stats,
+            focusAreas: profile.assessed_focus_areas || [],
+          }),
+        });
+        const raw = await res.text();
+        if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.steps || !data.steps.length) throw new Error('No plan returned');
+        renderPlanPreview(data, minutes);
+      } catch (e) {
+        slot.innerHTML = `
+          <div class="lesson-center error-box" style="padding:30px 0;">
+            <div style="font-size:30px;">⚠️</div>
+            <p style="font-weight:700;">${t('pl.couldntBuild')}</p>
+            <p class="text-faint" style="font-size:12.5px;max-width:320px;">${e.message || 'Unknown error'}</p>
+            <button class="btn-primary" id="retryPlanBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
+          </div>`;
+        document.getElementById('retryPlanBtn').addEventListener('click', () => buildPlan(minutes));
+      }
+    }
+
+    function renderPlanPreview(data, minutes) {
+      const slot = document.getElementById('mainSlot');
+      slot.innerHTML = `
+        <div class="lesson-body" style="padding:0;">
+          <h1 style="font-size:22px;margin-bottom:6px;">${t('pl.todaysPlan')}</h1>
+          <p class="text-dim" style="margin-bottom:18px;font-size:13.5px;">${data.summary || ''}</p>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="planStepsList"></div>
+          <p class="text-faint" style="font-size:11.5px;margin-top:16px;">${t('pl.disclaimer')}</p>
+          <button class="btn-primary" id="letsGoBtn" style="margin-top:16px;width:100%;justify-content:center;">${t('pl.letsGo')}</button>
+          <button class="btn-ghost" id="backToTimeBtn" style="width:100%;justify-content:center;margin-top:8px;">${t('pl.back')}</button>
+        </div>`;
+      document.getElementById('planStepsList').innerHTML = data.steps.map((s, i) => {
+        const info = MODULE_INFO[s.module] || { icon: '•', nameKey: '' };
+        return `
+        <div class="card" style="padding:12px 14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:18px;">${info.icon}</span>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:14px;">${i + 1}. ${info.nameKey ? t(info.nameKey) : s.module}</div>
+              ${s.reason ? `<div class="text-faint" style="font-size:11.5px;margin-top:2px;">${s.reason}</div>` : ''}
+            </div>
+            <span class="chip-mini">${s.minutes} min</span>
+          </div>
+        </div>`;
+      }).join('');
+      document.getElementById('backToTimeBtn').addEventListener('click', () => renderTimePicker());
+      document.getElementById('letsGoBtn').addEventListener('click', () => {
+        saveActivePlan({ steps: data.steps, currentIndex: 0, totalXp: 0 });
+        window.location.href = data.steps[0].module + '.html?plan=1';
+      });
+    }
+
+    // --- à la carte: today's normal 4-card dashboard --------------------
+    function renderALaCarte() {
+      const slot = document.getElementById('mainSlot');
+      const learning = langByCode(profile.target_language);
+      slot.innerHTML = `
         <div class="card">
           <span class="chip-mini">🗣️ ${t('db.naturalDialogChip')}</span>
           <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.naturalDialogTitle')}</h2>
@@ -127,11 +258,6 @@
           <div id="ladderSlot"></div>
         </div>
       `;
-      document.getElementById('mascotSlot').innerHTML = mascotHTML(38);
-      document.getElementById('tierBadge').textContent = profile.assessed_level
-        ? tierLabel(profile.assessed_level)
-        : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });
-      document.getElementById('evaluateBtn').addEventListener('click', () => openProgressModal(profile));
       document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
       document.getElementById('startTranslateBtn').addEventListener('click', () => { window.location.href = 'translate.html'; });
       document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
@@ -139,6 +265,33 @@
       renderLadder(document.getElementById('ladderSlot'), {
         mode: 'display', current: profile.current_level, target: profile.target_level, compact: true, progress: 40,
       });
+    }
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+      document.getElementById('loadingLabel').textContent = t('db.loading');
+      document.getElementById('navHome').querySelector('span').textContent = t('nav.home');
+      document.getElementById('navProgress').querySelector('span').textContent = t('nav.progress');
+      document.getElementById('navTalk').querySelector('span').textContent = t('nav.talk');
+      document.getElementById('navSignoutLabel').textContent = t('nav.signout');
+
+      // Landing on the dashboard always starts a fresh choice — any plan
+      // left mid-way from a previous visit is intentionally abandoned here,
+      // consistent with plans not being saved.
+      clearActivePlan();
+
+      const { count } = await db
+        .from('lesson_completions').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+      completionCount = count;
+      vocabProgress = await getVocabProgress(user.id, profile.target_language, profile.current_level);
+
+      renderHeader();
+      renderFork();
 
       const signOutBtn = document.getElementById('signOutBtn');
       if (DEV_MODE) {

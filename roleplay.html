@@ -19,9 +19,15 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
-    const MAX_TURNS = 12;
+    let maxTurns = 12;
     let user = null, profile = null, scenarios = [], scenario = null, sessionId = null, sessionTopic = null;
     let transcript = [], turnCount = 0, goalCompleted = false, grammarFlagged = [], busy = false;
+    let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
+
+    function planStepPrefix() {
+      if (!planCtx) return '';
+      return t('pl.stepOfTotal', { i: planCtx.plan.currentIndex + 1, n: planCtx.plan.steps.length });
+    }
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const micSupported = !!SR;
@@ -70,7 +76,13 @@
         if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
         if (!data.scenarios || !data.scenarios.length) throw new Error('No scenarios returned');
         scenarios = data.scenarios;
-        renderPicker();
+        if (planCtx) {
+          // Plan mode skips the scenario-picker screen too, to keep a
+          // build-my-plan session moving without an extra choice.
+          startSession(scenarios[Math.floor(Math.random() * scenarios.length)]);
+        } else {
+          renderPicker();
+        }
       } catch (e) {
         renderError(e.message || 'Unknown error', loadScenarios);
       }
@@ -126,7 +138,7 @@
     }
 
     function renderChat() {
-      document.getElementById('topLabel').textContent = scenario.title;
+      document.getElementById('topLabel').textContent = planStepPrefix() + scenario.title;
       document.getElementById('roleplayBody').innerHTML = `
         ${goalCompleted ? `<div class="goal-banner">${t('rp.goalReachedBanner')}</div>` : ''}
         <div class="chat-scroll" id="chatScroll"></div>
@@ -282,7 +294,7 @@
           await db.from('roleplay_sessions').update({ transcript, goal_completed: goalCompleted }).eq('id', sessionId);
         }
 
-        if (turnCount >= MAX_TURNS) { finishSession(); return; }
+        if (turnCount >= maxTurns) { finishSession(); return; }
         renderChat();
       } catch (e) {
         transcript.push({ speaker: 'ai', text: t('rp.couldntReach'), native: e.message || '' });
@@ -307,9 +319,12 @@
               <p class="text-faint" style="font-size:11.5px;margin-top:6px;">${t('rp.comeBackAround')}</p>
             </div>` : ''}
           <div id="levelUpSlot" style="width:100%;"></div>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rp.backToHome')}</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('rp.backToHome')}</button>
         </div>`;
-      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      document.getElementById('doneBtn').addEventListener('click', () => {
+        if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
+        else { window.location.href = 'dashboard.html'; }
+      });
 
       if (sessionId) {
         await db.from('roleplay_sessions').update({
@@ -342,15 +357,22 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
+      planCtx = isPlanStepActive('roleplay');
       document.getElementById('topLabel').textContent = '';
-      renderTopicPicker(document.getElementById('roleplayBody'), {
-        initial: getLastTopics(profile),
-        onStart: async (selection) => {
-          await saveLastTopics(user.id, selection);
-          sessionTopic = pickTopicForSession(selection);
-          loadScenarios();
-        },
-      });
+      if (planCtx) {
+        maxTurns = Math.min(Math.max(Math.round(planCtx.step.minutes * 0.8), 4), 16);
+        sessionTopic = pickTopicForSession(getLastTopics(profile));
+        loadScenarios();
+      } else {
+        renderTopicPicker(document.getElementById('roleplayBody'), {
+          initial: getLastTopics(profile),
+          onStart: async (selection) => {
+            await saveLastTopics(user.id, selection);
+            sessionTopic = pickTopicForSession(selection);
+            loadScenarios();
+          },
+        });
+      }
     })();
   </script>
 </body>

@@ -20,6 +20,12 @@
   <script src="i18n.js"></script>
   <script>
     let user = null, profile = null, words = [], learnIdx = 0, quizIdx = 0, quizOrder = [], results = [];
+    let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
+
+    function planStepPrefix() {
+      if (!planCtx) return '';
+      return t('pl.stepOfTotal', { i: planCtx.plan.currentIndex + 1, n: planCtx.plan.steps.length });
+    }
 
     function renderLoading() {
       document.getElementById('vocabBody').innerHTML = `
@@ -46,6 +52,7 @@
       try {
         const avoid = await fetchRecentValues('vocab_items', 'target_text', profile.target_language, profile.current_level, 200);
         const token = await getAuthToken();
+        const count = planCtx ? Math.min(Math.max(Math.round(planCtx.step.minutes / 10 * 8), 4), 12) : 8;
         const res = await fetch(GENERATE_VOCAB_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -54,7 +61,7 @@
             nativeLanguage: profile.native_language,
             level: profile.current_level,
             avoid,
-            count: 8,
+            count,
           }),
         });
         const raw = await res.text();
@@ -93,7 +100,7 @@
     function renderLearnCard() {
       const w = words[learnIdx];
       const tts = langByCode(profile.target_language).tts;
-      document.getElementById('topLabel').textContent = `${t('vc.learning')} · ${learnIdx + 1}/${words.length}`;
+      document.getElementById('topLabel').textContent = `${planStepPrefix()}${t('vc.learning')} · ${learnIdx + 1}/${words.length}`;
       document.getElementById('vocabBody').innerHTML = `
         <div class="lesson-body">
           <div class="card" style="text-align:center;">
@@ -130,7 +137,7 @@
       const distractors = words.filter(x => x !== w).map(x => x.nativeText).sort(() => Math.random() - 0.5).slice(0, 3);
       const options = [...distractors, w.nativeText].sort(() => Math.random() - 0.5);
 
-      document.getElementById('topLabel').textContent = `${t('vc.quiz')} · ${quizIdx + 1}/${words.length}`;
+      document.getElementById('topLabel').textContent = `${planStepPrefix()}${t('vc.quiz')} · ${quizIdx + 1}/${words.length}`;
       document.getElementById('vocabBody').innerHTML = `
         <div class="lesson-body">
           <span class="text-faint" style="font-size:12px;">${t('vc.whatDoesMean')}</span>
@@ -172,9 +179,12 @@
           <p class="text-dim" style="font-size:14.5px;">${t('vc.correctOfTotal', { c: correctCount, t: words.length })}</p>
           <p class="text-faint" style="font-size:12px;margin-top:6px;">${t('vc.addedToReview')}</p>
           <div id="levelUpSlot" style="width:100%;"></div>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('vc.backToHome')}</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('vc.backToHome')}</button>
         </div>`;
-      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      document.getElementById('doneBtn').addEventListener('click', () => {
+        if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
+        else { window.location.href = 'dashboard.html'; }
+      });
 
       for (const r of results) {
         if (r.word.id) await recordSkillResult(user.id, 'vocab', r.word.id, r.correct);
@@ -201,6 +211,7 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
+      planCtx = isPlanStepActive('vocab');
       document.getElementById('topLabel').textContent = '';
       loadBatch();
     })();

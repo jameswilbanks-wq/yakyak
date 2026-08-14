@@ -12,8 +12,18 @@ const INPUT_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-input-passage";
 const GRADE_PRONUNCIATION_URL = SUPABASE_URL + "/functions/v1/grade-pronunciation";
 const EVALUATE_PROGRESS_URL = SUPABASE_URL + "/functions/v1/evaluate-progress";
 const GENERATE_VOCAB_URL = SUPABASE_URL + "/functions/v1/generate-vocab-batch";
+const GENERATE_PLAN_URL = SUPABASE_URL + "/functions/v1/generate-lesson-plan";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// Same choices used by onboarding's (now-removed) daily-time step and the
+// lesson-plan time picker — kept in one place so both stay consistent.
+const TIME_OPTIONS = [
+  { id: 5, key: 'time.5' },
+  { id: 15, key: 'time.15' },
+  { id: 30, key: 'time.30' },
+  { id: 60, key: 'time.60' },
+];
 
 const LEVELS = [
   { code: 'Pre-A1', label: 'Absolute beginner' },
@@ -169,6 +179,55 @@ async function fetchRecentValues(table, column, targetLanguage, level, limit) {
   } catch (e) {
     return [];
   }
+}
+
+// --- Lesson Plan (build-my-plan) ------------------------------------------
+// A generated plan (ordered module steps sized to a time budget) lives only
+// in sessionStorage — intentionally NOT persisted to the DB, so it quietly
+// resets whenever the tab/session ends (the plan preview screen tells the
+// learner this up front). Each module page checks isPlanStepActive() on
+// load to know whether it's running as a step of an in-progress plan
+// (should size itself to the step's minutes + skip its own topic picker)
+// versus a normal standalone session.
+const PLAN_KEY = 'yakyak_active_plan';
+
+function getActivePlan() {
+  try {
+    const raw = sessionStorage.getItem(PLAN_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function saveActivePlan(plan) {
+  try { sessionStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch (e) {}
+}
+function clearActivePlan() {
+  try { sessionStorage.removeItem(PLAN_KEY); } catch (e) {}
+}
+
+// Returns { plan, step } if THIS page is the current step of an
+// in-progress plan — gated on both the '?plan=1' URL flag and matching
+// sessionStorage, so a stale leftover plan can never silently hijack a
+// normal direct visit to a module page. Returns null otherwise.
+function isPlanStepActive(moduleName) {
+  if (!/[?&]plan=1(&|$)/.test(window.location.search)) return null;
+  const plan = getActivePlan();
+  if (!plan || !plan.steps || !plan.steps.length) return null;
+  const step = plan.steps[plan.currentIndex];
+  if (!step || step.module !== moduleName) return null;
+  return { plan, step };
+}
+
+// Call when a plan-mode module finishes: folds its XP into the plan's
+// running total, advances to the next step, and returns the URL to send
+// the learner to next — the next module, or the wrap-up summary if that
+// was the last step.
+function advancePlanAndGetNextUrl(plan, xpEarned) {
+  plan.totalXp = (plan.totalXp || 0) + (xpEarned || 0);
+  plan.currentIndex = (plan.currentIndex || 0) + 1;
+  saveActivePlan(plan);
+  return plan.currentIndex < plan.steps.length
+    ? plan.steps[plan.currentIndex].module + '.html?plan=1'
+    : 'plan-summary.html';
 }
 
 // --- Progress evaluation -------------------------------------------------

@@ -27,6 +27,12 @@
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const micSupported = !!SR;
+    let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
+
+    function planStepPrefix() {
+      if (!planCtx) return '';
+      return t('pl.stepOfTotal', { i: planCtx.plan.currentIndex + 1, n: planCtx.plan.steps.length });
+    }
 
     function renderPicker() {
       document.getElementById('topLabel').textContent = '';
@@ -122,7 +128,7 @@
       isRecording = false;
       const sentence = passage.sentences[sIdx];
       const tts = langByCode(profile.target_language).tts;
-      document.getElementById('topLabel').textContent = t('in.sentenceOfTotal', { i: sIdx + 1, n: passage.sentences.length });
+      document.getElementById('topLabel').textContent = planStepPrefix() + t('in.sentenceOfTotal', { i: sIdx + 1, n: passage.sentences.length });
 
       const showText = kind === 'reading';
       document.getElementById('inputBody').innerHTML = `
@@ -505,9 +511,12 @@
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('in.niceWorkTitle')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('in.understoodOfTotal', { c: compCorrect, t: total })}${avgPron !== null ? ` · ${t('in.pronAvg', { n: avgPron })}` : ''}</p>
           <div id="levelUpSlot" style="width:100%;"></div>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('in.backToHome')}</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('in.backToHome')}</button>
         </div>`;
-      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      document.getElementById('doneBtn').addEventListener('click', () => {
+        if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
+        else { window.location.href = 'dashboard.html'; }
+      });
 
       if (passageId) {
         await db.from('input_completions').insert({
@@ -540,15 +549,23 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
+      planCtx = isPlanStepActive('input');
       document.getElementById('topLabel').textContent = '';
-      renderTopicPicker(document.getElementById('inputBody'), {
-        initial: getLastTopics(profile),
-        onStart: async (selection) => {
-          await saveLastTopics(user.id, selection);
-          sessionTopic = pickTopicForSession(selection);
-          renderPicker();
-        },
-      });
+      if (planCtx) {
+        // Plan mode skips both the topic picker and the reading/listening
+        // choice, alternating kind at random to keep some variety.
+        sessionTopic = pickTopicForSession(getLastTopics(profile));
+        loadPassage(Math.random() < 0.5 ? 'reading' : 'listening');
+      } else {
+        renderTopicPicker(document.getElementById('inputBody'), {
+          initial: getLastTopics(profile),
+          onStart: async (selection) => {
+            await saveLastTopics(user.id, selection);
+            sessionTopic = pickTopicForSession(selection);
+            renderPicker();
+          },
+        });
+      }
     })();
   </script>
 </body>
