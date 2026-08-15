@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Level-Up Test</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="mascot" style="width:20px;height:20px;">
+          <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
+          <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
+        </div>
+        <button class="icon-btn" id="exitBtn">✕</button>
+      </div>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="progressBarSlot"></div>
+    <div id="ltBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    // CEFR Level-Up Test: the deliberate capstone for crossing a big CEFR
+    // boundary (A1->A2, A2->B1, ...) — only reachable from the dashboard
+    // once levelTestEligibility() says so (see supabase-client.js). Reuses
+    // every generation/grading edge function the other 4 modules already
+    // use (generate-vocab-batch, generate-translation-set + grade-
+    // translation, generate-extensive-passage, grade-pronunciation) rather
+    // than inventing new ones — this page is really just an orchestrator
+    // that stitches 4 short sections into one exam, then calls the new
+    // level-test-coach function once at the end to synthesize a single
+    // honest coaching paragraph over all 4 results together.
+    let user = null, profile = null, nextLevel = null;
+
+    // Section state
+    let qIndex = 0;
+    let vocabWords = [], vocabQuestions = [], vocabAnswers = [];
+    let transExercises = [], transAnswers = [], transResults = [];
+    let passage = null, readingAnswers = [];
+    let speakSentence = '', speakResult = null;
+
+    const MODULE_MAP = {
+      vocab: { href: 'vocab.html', labelKey: 'lvt.sectionVocab' },
+      translation: { href: 'translate.html', labelKey: 'lvt.sectionTranslation' },
+      reading: { href: 'reading.html', labelKey: 'lvt.sectionReading' },
+      speaking: { href: 'input.html', labelKey: 'lvt.sectionSpeaking' },
+    };
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function buildVocabQuestions(words) {
+      return words.map((w, i) => {
+        const distractorPool = words.filter((_, j) => j !== i).map(x => x.nativeText);
+        const distractors = shuffle(distractorPool).slice(0, 3);
+        const options = shuffle([w.nativeText, ...distractors]);
+        return { word: w, options, correctIndex: options.indexOf(w.nativeText) };
+      });
+    }
+
+    // formatHoursRemaining() lives in supabase-client.js — shared with the
+    // dashboard's level-up banner so both read the same rounding rule.
+
+    function renderProgressBar(idx) {
+      document.getElementById('progressBarSlot').innerHTML = `<div class="progress-bar" style="margin:0 22px 0;" id="pbSlot"></div>`;
+      document.getElementById('pbSlot').innerHTML = [0, 1, 2, 3].map(i => `<div class="progress-seg${i <= idx ? ' filled' : ''}"></div>`).join('');
+    }
+
+    // --- Eligibility / intro screens ---------------------------------------
+
+    function renderIneligible(elig) {
+      document.getElementById('progressBarSlot').innerHTML = '';
+      let titleKey, bodyKey, vars = {};
+      if (elig.reason === 'maxed') { titleKey = 'lvt.maxedTitle'; bodyKey = 'lvt.maxedBody'; }
+      else if (elig.reason === 'not_assessed') { titleKey = 'lvt.notAssessedTitle'; bodyKey = 'lvt.notAssessedBody'; }
+      else if (elig.reason === 'not_advanced') { titleKey = 'lvt.notAdvancedTitle'; bodyKey = 'lvt.notAdvancedBody'; vars = { level: profile.current_level }; }
+      else { titleKey = 'lvt.cooldownTitle'; bodyKey = 'lvt.cooldownBody'; vars = { n: formatHoursRemaining(elig.cooldownUntil) }; }
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-center error-box" style="padding:70px 0;">
+          <div style="font-size:34px;">🔒</div>
+          <p style="font-weight:800;font-size:17px;">${t(titleKey)}</p>
+          <p class="text-faint" style="font-size:13px;max-width:320px;">${t(bodyKey, vars)}</p>
+          <button class="btn-primary" id="backBtn" style="margin-top:8px;">${t('lvt.backToDashboard')}</button>
+        </div>`;
+      document.getElementById('backBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    }
+
+    function renderIntro() {
+      document.getElementById('progressBarSlot').innerHTML = '';
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <h1 style="font-size:24px;margin-bottom:6px;">${t('lvt.title')}</h1>
+          <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${t('lvt.introSubtitle', { level: nextLevel })}</p>
+          <div class="card" style="margin-bottom:22px;">
+            <p class="text-dim" style="font-size:13.5px;line-height:1.6;">${t('lvt.introBody')}</p>
+          </div>
+          <button class="btn-primary" id="startBtn" style="width:100%;justify-content:center;">${t('lvt.startBtn')}</button>
+        </div>`;
+      document.getElementById('startBtn').addEventListener('click', startTest);
+    }
+
+    function renderGenerating() {
+      document.getElementById('progressBarSlot').innerHTML = '';
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-center" style="padding:70px 0;">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('lvt.building')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderGenerateError() {
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-center error-box" style="padding:50px 0;">
+          <div style="font-size:30px;">⚠️</div>
+          <p style="font-weight:700;">${t('lvt.couldntBuild')}</p>
+          <button class="btn-primary" id="retryBtn">${t('ls.tryAgain')}</button>
+        </div>`;
+      document.getElementById('retryBtn').addEventListener('click', startTest);
+    }
+
+    async function startTest() {
+      renderGenerating();
+      const learning = langByCode(profile.target_language);
+      try {
+        const token = await getAuthToken();
+        const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+        const [vocabRes, transRes, passageRes] = await Promise.all([
+          fetch(GENERATE_VOCAB_URL, { method: 'POST', headers, body: JSON.stringify({ targetLanguage: learning.name, nativeLanguage: profile.native_language, level: nextLevel, count: 5 }) }),
+          fetch(TRANSLATE_GENERATE_URL, { method: 'POST', headers, body: JSON.stringify({ targetLanguage: learning.name, nativeLanguage: profile.native_language, level: nextLevel, count: 5 }) }),
+          fetch(GENERATE_EXTENSIVE_PASSAGE_URL, { method: 'POST', headers, body: JSON.stringify({ targetLanguage: learning.name, nativeLanguage: profile.native_language, level: nextLevel }) }),
+        ]);
+        const [vocabData, transData, passageData] = await Promise.all([vocabRes, transRes, passageRes].map(r => r.text().then(JSON.parse)));
+        if (vocabData.error || transData.error || passageData.error) throw new Error('generation error');
+        if (!vocabData.words || vocabData.words.length < 4) throw new Error('vocab batch too small');
+        if (!transData.exercises || !transData.exercises.length) throw new Error('no translation exercises');
+        if (!passageData.sentences || !passageData.sentences.length || !passageData.questions || !passageData.questions.length) throw new Error('no passage');
+
+        vocabWords = vocabData.words.slice(0, 5);
+        vocabQuestions = buildVocabQuestions(vocabWords);
+        vocabAnswers = [];
+        transExercises = transData.exercises.slice(0, 5);
+        transAnswers = []; transResults = [];
+        passage = passageData;
+        readingAnswers = [];
+        const mid = Math.min(2, Math.max(0, passage.sentences.length - 1));
+        speakSentence = passage.sentences[mid].target;
+        speakResult = null;
+
+        qIndex = 0;
+        renderVocabQ();
+      } catch (e) {
+        renderGenerateError();
+      }
+    }
+
+    // --- Section 1: Vocabulary ---------------------------------------------
+
+    function renderVocabQ() {
+      const total = vocabQuestions.length;
+      const q = vocabQuestions[qIndex];
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <p class="text-faint" style="font-size:12px;margin-bottom:4px;">${t('lvt.stepVocab')} · ${t('lvt.questionOf', { n: qIndex + 1, total })}</p>
+          <h1 style="font-size:20px;margin-bottom:18px;">${t('lvt.vocabPrompt')}</h1>
+          <div class="card" style="text-align:center;padding:22px 16px;margin-bottom:18px;">
+            <div style="font-size:24px;font-weight:800;font-family:var(--font-display);">${escapeHtml(q.word.targetText)}</div>
+            ${q.word.partOfSpeech ? `<div class="text-faint" style="font-size:12px;margin-top:4px;">${escapeHtml(q.word.partOfSpeech)}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="optList"></div>
+        </div>`;
+      renderProgressBar(0);
+      const optList = document.getElementById('optList');
+      optList.innerHTML = q.options.map((opt, i) => `<button class="row-option" data-i="${i}"><span>${escapeHtml(opt)}</span></button>`).join('');
+      optList.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => {
+        vocabAnswers[qIndex] = parseInt(b.dataset.i);
+        qIndex++;
+        if (qIndex < total) renderVocabQ();
+        else { qIndex = 0; renderTranslationQ(); }
+      }));
+    }
+
+    // --- Section 2: Grammar / translation -----------------------------------
+
+    function renderTranslationQ() {
+      const total = transExercises.length;
+      const ex = transExercises[qIndex];
+      const learning = langByCode(profile.target_language);
+      const promptLang = ex.sourceLang === 'target' ? profile.native_language : learning.name;
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <p class="text-faint" style="font-size:12px;margin-bottom:4px;">${t('lvt.stepTranslation')} · ${t('lvt.questionOf', { n: qIndex + 1, total })}</p>
+          <h1 style="font-size:19px;margin-bottom:14px;">${t('lvt.translatePrompt', { lang: promptLang })}</h1>
+          <div class="card" style="padding:18px;margin-bottom:16px;">
+            <div style="font-size:17px;font-weight:700;">${escapeHtml(ex.sourceText)}</div>
+          </div>
+          <input id="ansInput" class="input" placeholder="${t('lvt.answerPlaceholder')}" style="margin-bottom:16px;" autocomplete="off">
+          <button class="btn-primary" id="submitBtn" style="width:100%;justify-content:center;">${t('lvt.submitBtn')}</button>
+        </div>`;
+      renderProgressBar(1);
+      const btn = document.getElementById('submitBtn');
+      const input = document.getElementById('ansInput');
+      input.focus();
+      const submit = async () => {
+        const userAnswer = input.value.trim();
+        if (!userAnswer) return;
+        btn.disabled = true; input.disabled = true;
+        btn.textContent = t('lvt.grading');
+        let result = { isCorrect: false, feedback: '' };
+        try {
+          const token = await getAuthToken();
+          const res = await fetch(TRANSLATE_GRADE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({
+              sourceText: ex.sourceText, expectedText: ex.expectedText, userAnswer,
+              targetLanguage: learning.name, nativeLanguage: profile.native_language, grammarLabel: ex.grammarLabel,
+            }),
+          });
+          const data = JSON.parse(await res.text());
+          if (res.ok && !data.error) result = data;
+        } catch (e) { /* best-effort — falls through as incorrect, doesn't block the test */ }
+        transAnswers[qIndex] = userAnswer;
+        transResults[qIndex] = result;
+        qIndex++;
+        if (qIndex < total) renderTranslationQ();
+        else { qIndex = 0; renderReadingPassage(); }
+      };
+      btn.addEventListener('click', submit);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    }
+
+    // --- Section 3: Reading comprehension -----------------------------------
+
+    function renderReadingPassage() {
+      const bodyHtml = escapeHtml(passage.body || '').replace(/\n\n/g, '<br><br>');
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <p class="text-faint" style="font-size:12px;margin-bottom:4px;">${t('lvt.stepReading')}</p>
+          <h1 style="font-size:20px;margin-bottom:14px;">${escapeHtml(passage.title || '')}</h1>
+          <div class="card" style="padding:18px;line-height:1.6;font-size:14.5px;">${bodyHtml}</div>
+          <button class="btn-primary" id="contBtn" style="width:100%;justify-content:center;margin-top:18px;">${t('lvt.continueToQuestions')}</button>
+        </div>`;
+      renderProgressBar(2);
+      document.getElementById('contBtn').addEventListener('click', () => { qIndex = 0; renderReadingQ(); });
+    }
+
+    function renderReadingQ() {
+      const total = passage.questions.length;
+      const q = passage.questions[qIndex];
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <p class="text-faint" style="font-size:12px;margin-bottom:4px;">${t('lvt.stepReading')} · ${t('lvt.questionOf', { n: qIndex + 1, total })}</p>
+          <h1 style="font-size:19px;margin-bottom:18px;">${escapeHtml(q.question)}</h1>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="optList"></div>
+        </div>`;
+      renderProgressBar(2);
+      const optList = document.getElementById('optList');
+      optList.innerHTML = q.options.map((opt, i) => `<button class="row-option" data-i="${i}"><span>${escapeHtml(opt)}</span></button>`).join('');
+      optList.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => {
+        readingAnswers[qIndex] = parseInt(b.dataset.i);
+        qIndex++;
+        if (qIndex < total) renderReadingQ();
+        else { qIndex = 0; renderSpeaking(); }
+      }));
+    }
+
+    // --- Section 4: Speaking -------------------------------------------------
+    // Generalized recording controls, copied from input.html's implementation
+    // (see that file's comment: "used both for the main sentence-level mic
+    // button and for per-word retry mic buttons") so this page's mic/grading
+    // behavior matches exactly rather than re-deriving it.
+    let recognition = null, isRecording = false;
+    let mediaRecorder = null, mediaStream = null, audioChunks = [], liveTranscript = '';
+    let activeMicBtn = null, activeHint = null, activeTargetText = null, activeOnGraded = null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micSupported = !!SR;
+
+    async function toggleRecording(micBtn, hint, targetText, onGraded) {
+      if (isRecording) { stopRecording(); return; }
+      await startRecording(micBtn, hint, targetText, onGraded);
+    }
+
+    async function startRecording(micBtn, hint, targetText, onGraded) {
+      const tts = langByCode(profile.target_language).tts;
+      audioChunks = []; liveTranscript = '';
+      activeMicBtn = micBtn; activeHint = hint; activeTargetText = targetText; activeOnGraded = onGraded;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        hint.textContent = t('in.micPermissionError');
+        return;
+      }
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.start();
+      recognition = new SR();
+      recognition.lang = tts;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (e) => {
+        let tr = '';
+        for (let i = 0; i < e.results.length; i++) tr += e.results[i][0].transcript;
+        liveTranscript = tr;
+      };
+      recognition.onerror = () => {};
+      recognition.start();
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.textContent = '⏹️';
+      hint.textContent = t('in.recordingTapStop');
+    }
+
+    function stopRecording() {
+      const micBtn = activeMicBtn, hint = activeHint, onGraded = activeOnGraded;
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micBtn.textContent = '🎙️';
+      micBtn.disabled = true;
+      hint.textContent = t('in.processing');
+      let recognitionDone = false, recorderDone = false;
+      const maybeFinish = () => { if (recognitionDone && recorderDone) onGraded(liveTranscript); };
+      if (recognition) {
+        recognition.onend = () => { recognitionDone = true; maybeFinish(); };
+        try { recognition.stop(); } catch (e) { recognitionDone = true; maybeFinish(); }
+      } else recognitionDone = true;
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.onstop = () => {
+          if (mediaStream) mediaStream.getTracks().forEach(tr => tr.stop());
+          recorderDone = true; maybeFinish();
+        };
+        try { mediaRecorder.stop(); } catch (e) { recorderDone = true; maybeFinish(); }
+      } else recorderDone = true;
+    }
+
+    function renderSpeaking() {
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <p class="text-faint" style="font-size:12px;margin-bottom:4px;">${t('lvt.stepSpeaking')}</p>
+          <h1 style="font-size:19px;margin-bottom:18px;">${t('lvt.speakingPrompt')}</h1>
+          <div class="card" style="text-align:center;padding:22px 18px;margin-bottom:24px;">
+            <div style="font-size:18px;font-weight:700;">${escapeHtml(speakSentence)}</div>
+          </div>
+          ${micSupported ? `
+            <button class="mic-btn" id="micBtn">🎙️</button>
+            <p class="text-faint" id="micHint" style="text-align:center;font-size:12.5px;margin-top:12px;">&nbsp;</p>
+          ` : `
+            <button class="btn-primary" id="skipMicBtn" style="width:100%;justify-content:center;">${t('lvt.nextBtn')}</button>
+          `}
+        </div>`;
+      renderProgressBar(3);
+      if (micSupported) {
+        const micBtn = document.getElementById('micBtn');
+        const hint = document.getElementById('micHint');
+        micBtn.addEventListener('click', () => toggleRecording(micBtn, hint, speakSentence, (transcript) => gradeSpeaking(transcript)));
+      } else {
+        document.getElementById('skipMicBtn').addEventListener('click', () => { speakResult = { score: 0, feedback: '' }; finishTest(); });
+      }
+    }
+
+    async function gradeSpeaking(transcript) {
+      const hint = document.getElementById('micHint');
+      if (hint) hint.textContent = t('lvt.grading');
+      let result = { score: 0, feedback: '' };
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GRADE_PRONUNCIATION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetSentence: speakSentence, transcript,
+            targetLanguage: langByCode(profile.target_language).name, nativeLanguage: profile.native_language,
+          }),
+        });
+        const data = JSON.parse(await res.text());
+        if (res.ok && !data.error) result = data;
+      } catch (e) { /* best-effort — falls through as a 0, doesn't block the test */ }
+      speakResult = result;
+      finishTest();
+    }
+
+    // --- Grading + results ---------------------------------------------------
+
+    async function finishTest() {
+      const fromLevel = profile.current_level; // capture before any mutation below
+      document.getElementById('progressBarSlot').innerHTML = '';
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-center" style="padding:70px 0;">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('lvt.grading')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+
+      const vocabCorrect = vocabAnswers.filter((a, i) => a === vocabQuestions[i].correctIndex).length;
+      const vocabScore = Math.round(100 * vocabCorrect / vocabQuestions.length);
+      const transCorrect = transResults.filter(r => r && r.isCorrect).length;
+      const translationScore = Math.round(100 * transCorrect / transExercises.length);
+      const readingCorrect = readingAnswers.filter((a, i) => a === passage.questions[i].answerIndex).length;
+      const readingScore = Math.round(100 * readingCorrect / passage.questions.length);
+      const speakingScore = (speakResult && typeof speakResult.score === 'number') ? speakResult.score : 0;
+      const overallScore = Math.round((vocabScore + translationScore + readingScore + speakingScore) / 4);
+      const passed = overallScore >= LEVEL_TEST_PASS_THRESHOLD;
+
+      const sections = {
+        vocab: { score: vocabScore, missedExamples: vocabAnswers.map((a, i) => a !== vocabQuestions[i].correctIndex ? `${vocabQuestions[i].word.targetText} = ${vocabQuestions[i].word.nativeText}` : null).filter(Boolean).slice(0, 3) },
+        translation: { score: translationScore, missedExamples: transResults.map((r, i) => r && !r.isCorrect ? (r.feedback || transExercises[i].sourceText) : null).filter(Boolean).slice(0, 3) },
+        reading: { score: readingScore, missedQuestions: readingAnswers.map((a, i) => a !== passage.questions[i].answerIndex ? passage.questions[i].question : null).filter(Boolean).slice(0, 3) },
+        speaking: { score: speakingScore, feedback: (speakResult && speakResult.feedback) || '' },
+      };
+
+      const scoreMap = { vocab: vocabScore, translation: translationScore, reading: readingScore, speaking: speakingScore };
+      const weakest = Object.keys(scoreMap).reduce((a, b) => scoreMap[a] <= scoreMap[b] ? a : b);
+
+      let coachMessage = '';
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(LEVEL_TEST_COACH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetLanguage: langByCode(profile.target_language).name, nativeLanguage: profile.native_language,
+            fromLevel, toLevel: nextLevel, passed, overallScore, sections,
+          }),
+        });
+        const data = JSON.parse(await res.text());
+        if (res.ok && !data.error) coachMessage = data.coachMessage || '';
+      } catch (e) { /* best-effort — results screen still works without it */ }
+
+      const xpEarned = passed ? LEVEL_TEST_XP_BONUS : 0;
+      await updateStreakAndActivity(user, profile, xpEarned, 'level_test');
+
+      const update = {};
+      let cooldownUntilForDisplay = null;
+      if (passed) {
+        update.current_level = nextLevel;
+        update.assessed_level = nextLevel + '.1';
+        update.assessed_reasoning = coachMessage || null;
+        update.assessed_focus_areas = [t(MODULE_MAP[weakest].labelKey)];
+        update.assessed_at = new Date().toISOString();
+        update.activities_since_assessment = 0;
+        update.level_test_cooldown_until = null;
+      } else {
+        cooldownUntilForDisplay = new Date(Date.now() + LEVEL_TEST_COOLDOWN_HOURS * 3600 * 1000).toISOString();
+        update.level_test_cooldown_until = cooldownUntilForDisplay;
+      }
+      try { await db.from('profiles').update(update).eq('id', user.id); } catch (e) {}
+      Object.assign(profile, update);
+
+      let newBadges = [];
+      if (passed) { try { newBadges = await checkAndAwardBadges(user, profile); } catch (e) {} }
+
+      try {
+        await db.from('level_test_attempts').insert({
+          user_id: user.id, target_language: profile.target_language,
+          from_level: fromLevel, to_level: nextLevel,
+          vocab_score: vocabScore, translation_score: translationScore,
+          reading_score: readingScore, speaking_score: speakingScore,
+          overall_score: overallScore, passed, coach_feedback: coachMessage || null,
+        });
+      } catch (e) { /* history row is best-effort, must not block showing results */ }
+
+      renderResults(passed, overallScore, sections, coachMessage, weakest, newBadges, cooldownUntilForDisplay);
+    }
+
+    function renderResults(passed, overallScore, sections, coachMessage, weakest, newBadges, cooldownUntil) {
+      const rec = MODULE_MAP[weakest];
+      document.getElementById('ltBody').innerHTML = `
+        <div class="lesson-body">
+          <div class="lesson-center" style="padding:10px 0 20px;">
+            <div style="font-size:40px;">${passed ? '🎉' : '💪'}</div>
+            <h1 style="font-size:23px;margin-top:8px;">${passed ? t('lvt.resultsTitlePass') : t('lvt.resultsTitleFail')}</h1>
+            <p class="text-dim" style="font-size:14px;margin-top:4px;">${t('lvt.resultsScore', { n: overallScore })} · ${t('lvt.passNeeded')}</p>
+          </div>
+
+          ${passed ? `<div class="card" style="text-align:center;background:var(--mint-soft);border-color:var(--mint);margin-bottom:16px;">
+            <p style="font-weight:800;font-size:16px;">${t('lvt.newLevelBanner', { level: nextLevel })}</p>
+          </div>` : ''}
+
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+            ${['vocab', 'translation', 'reading', 'speaking'].map(k => `
+              <div class="card" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;">
+                <span style="font-weight:700;font-size:13.5px;">${t(MODULE_MAP[k].labelKey)}</span>
+                <span class="chip-mini"${k === weakest ? ' style="background:var(--danger-soft);color:var(--danger);"' : ''}>${sections[k].score}%</span>
+              </div>`).join('')}
+          </div>
+
+          ${coachMessage ? `
+            <div class="card" style="margin-bottom:16px;">
+              <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);margin-bottom:8px;">${t('lvt.coachLabel')}</span>
+              <p class="text-dim" style="font-size:13.5px;line-height:1.5;">${escapeHtml(coachMessage)}</p>
+            </div>` : ''}
+
+          ${badgesEarnedHTML(newBadges)}
+
+          ${!passed ? `<p class="text-faint" style="font-size:12px;text-align:center;margin:4px 0 16px;">${t('lvt.cooldownBody', { n: formatHoursRemaining(cooldownUntil) })}</p>` : ''}
+
+          <a href="${rec.href}" class="btn-primary" style="width:100%;justify-content:center;text-decoration:none;margin-top:${passed ? '4px' : '0'};">${t('lvt.goPractice')}: ${t(rec.labelKey)}</a>
+          <button class="btn-ghost" id="doneBtn" style="width:100%;justify-content:center;margin-top:8px;">${t('lvt.backToDashboard')}</button>
+        </div>`;
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    }
+
+    // --- Boot ------------------------------------------------------------
+
+    document.getElementById('exitBtn').addEventListener('click', () => {
+      if (recognition) { try { recognition.stop(); } catch (e) {} }
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') { try { mediaRecorder.stop(); } catch (e) {} }
+      if (mediaStream) { try { mediaStream.getTracks().forEach(tr => tr.stop()); } catch (e) {} }
+      window.location.href = 'dashboard.html';
+    });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+      document.getElementById('topLabel').textContent = t('lvt.title');
+
+      const elig = levelTestEligibility(profile);
+      if (!elig.eligible) { renderIneligible(elig); return; }
+      nextLevel = elig.nextLevel;
+      renderIntro();
+    })();
+  </script>
+</body>
+</html>

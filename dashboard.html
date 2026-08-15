@@ -68,6 +68,7 @@
           </div>
           <span style="font-weight:800;font-size:13px;color:var(--accent-ink);letter-spacing:.2px;">YakYak</span>
         </div>
+        <div id="coachSlot"></div>
         <div id="cheerBannerSlot"></div>
         <div class="dash-header">
           <div style="display:flex;align-items:center;gap:10px;">
@@ -88,6 +89,7 @@
           <button class="btn-ghost" id="evaluateBtn">🎯 ${t('lvl.evaluateBtn')}</button>
         </div>
 
+        <div id="levelTestBannerSlot"></div>
         <div id="mainSlot"></div>
       `;
       document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(currentEvolutionStage(profile.xp).avatarId, 76, myBadgeCodes);
@@ -96,6 +98,64 @@
         ? tierLabel(profile.assessed_level)
         : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });
       document.getElementById('evaluateBtn').addEventListener('click', () => openProgressModal(profile));
+      renderLevelTestBanner();
+    }
+
+    // Shown only when the learner is actually eligible (see
+    // levelTestEligibility() in supabase-client.js — gated on already
+    // being at this level's Advanced sub-tier) or on cooldown after a
+    // recent attempt. Silent otherwise, so most visits show nothing here.
+    function renderLevelTestBanner() {
+      const slot = document.getElementById('levelTestBannerSlot');
+      const elig = levelTestEligibility(profile);
+      if (elig.eligible) {
+        slot.innerHTML = `
+          <a href="level-test.html" class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);border:1px solid var(--accent);background:var(--accent-soft);">
+            <div style="font-size:24px;">🏆</div>
+            <div style="flex:1;">
+              <div style="font-weight:800;font-size:14px;color:var(--accent-ink);">${t('lvt.dashBannerTitle')}</div>
+              <div class="text-faint" style="font-size:12px;margin-top:2px;">${t('lvt.dashBannerDesc', { level: profile.current_level, next: elig.nextLevel })}</div>
+            </div>
+            <div style="font-size:16px;color:var(--accent-ink);">→</div>
+          </a>`;
+      } else if (elig.reason === 'cooldown') {
+        slot.innerHTML = `
+          <div class="card" style="margin-bottom:14px;font-size:12.5px;">
+            <span class="text-faint">⏳ ${t('lvt.dashBannerCooldownDesc', { n: formatHoursRemaining(elig.cooldownUntil) })}</span>
+          </div>`;
+      } else {
+        slot.innerHTML = '';
+      }
+    }
+
+    // Coach Yak: a fixed mascot persona (avatars/coach.png), distinct from
+    // the learner's own Yak Evolution avatar. Fire-and-forget from the boot
+    // sequence — never blocks the rest of the dashboard from rendering,
+    // since the first-of-day version makes a real AI call (see
+    // getDailyCoachCheckin in supabase-client.js). Shows a full generated
+    // pep talk once per day, or a quick canned hype line on every later
+    // visit that same day.
+    async function renderCoachCard() {
+      const slot = document.getElementById('coachSlot');
+      const checkin = await getDailyCoachCheckin(user, profile);
+      const size = checkin.isNew ? 54 : 38;
+      const avatarImg = `
+        <div class="yak-avatar-idle" style="width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;background:var(--card-2);flex-shrink:0;">
+          <img src="avatars/coach.png" style="width:114%;height:114%;object-fit:cover;" alt="Coach Yak">
+        </div>`;
+      if (checkin.isNew && checkin.message) {
+        slot.innerHTML = `
+          <div class="card" style="display:flex;gap:12px;align-items:center;margin-bottom:14px;background:var(--accent-soft);border-color:var(--accent);">
+            ${avatarImg}
+            <p style="font-size:13.5px;line-height:1.5;">${escapeHtml(checkin.message)}</p>
+          </div>`;
+      } else {
+        slot.innerHTML = `
+          <div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;">
+            ${avatarImg}
+            <p style="font-size:13px;font-weight:700;">${randomHypePhrase()}</p>
+          </div>`;
+      }
     }
 
     // --- Step 1: à la carte vs. build-my-plan fork (shown every visit) ---
@@ -313,6 +373,7 @@
 
       renderHeader();
       renderFork();
+      renderCoachCard(); // fire-and-forget — fills in coachSlot once it resolves
 
       // Best-effort: let them know if anyone cheered them on since they last
       // checked Basecamp. Doesn't mark cheers seen here — that happens when

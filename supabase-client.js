@@ -14,6 +14,8 @@ const EVALUATE_PROGRESS_URL = SUPABASE_URL + "/functions/v1/evaluate-progress";
 const GENERATE_VOCAB_URL = SUPABASE_URL + "/functions/v1/generate-vocab-batch";
 const GENERATE_PLAN_URL = SUPABASE_URL + "/functions/v1/generate-lesson-plan";
 const GENERATE_EXTENSIVE_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-extensive-passage";
+const LEVEL_TEST_COACH_URL = SUPABASE_URL + "/functions/v1/level-test-coach";
+const GENERATE_COACH_CHECKIN_URL = SUPABASE_URL + "/functions/v1/generate-coach-checkin";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -258,6 +260,110 @@ function tierLabel(code) {
   const tier = TIERS.find(x => x.code === code);
   if (!tier) return code;
   return `${t(tier.subKey)} ${tier.baseLevel}`;
+}
+
+// --- CEFR Level-Up Test ---------------------------------------------------
+// A separate, deliberate capstone test (see level-test.html) for crossing
+// the big CEFR boundary between levels (A1→A2, A2→B1, ...) — distinct from
+// the passive background evaluation above, which only moves a learner
+// between the 3 sub-tiers WITHIN their current level. The test only
+// unlocks once the passive system already has them at their current
+// level's Advanced sub-tier (e.g. B1.3), so it stays a deliberate, earned
+// moment rather than something to spam early.
+const LEVEL_TEST_PASS_THRESHOLD = 75;
+const LEVEL_TEST_XP_BONUS = 150;
+const LEVEL_TEST_COOLDOWN_HOURS = 24;
+
+// The CEFR level after `code`, or null if already at the top (C2).
+function nextCefrLevel(code) {
+  const idx = LEVELS.findIndex(l => l.code === code);
+  if (idx === -1 || idx === LEVELS.length - 1) return null;
+  return LEVELS[idx + 1].code;
+}
+
+// Whether this learner can attempt the level-up test right now, and if
+// not, why — used both to gate the dashboard entry banner and as a
+// belt-and-suspenders check on level-test.html itself (in case someone
+// deep-links there directly). reason is one of: 'maxed' (already C2),
+// 'not_assessed' (no background evaluation yet), 'not_advanced' (assessed
+// but not yet at this level's Advanced sub-tier), 'cooldown' (failed
+// recently), or null when eligible.
+function levelTestEligibility(profile) {
+  const next = nextCefrLevel(profile.current_level);
+  if (!next) return { eligible: false, reason: 'maxed', nextLevel: null };
+  if (!profile.assessed_level) return { eligible: false, reason: 'not_assessed', nextLevel: next };
+  const tier = TIERS.find(t => t.code === profile.assessed_level);
+  const isAdvanced = tier && tier.subKey === 'tier.advanced' && tier.baseLevel === profile.current_level;
+  if (!isAdvanced) return { eligible: false, reason: 'not_advanced', nextLevel: next };
+  if (profile.level_test_cooldown_until && new Date(profile.level_test_cooldown_until) > new Date()) {
+    return { eligible: false, reason: 'cooldown', nextLevel: next, cooldownUntil: profile.level_test_cooldown_until };
+  }
+  return { eligible: true, reason: null, nextLevel: next };
+}
+
+// Shared by the dashboard's level-up banner and level-test.html's own
+// ineligible/cooldown screens, so both read the same rounding rule.
+function formatHoursRemaining(iso) {
+  if (!iso) return t('lvt.hoursUnit', { n: LEVEL_TEST_COOLDOWN_HOURS });
+  const ms = new Date(iso) - new Date();
+  const hours = Math.max(1, Math.ceil(ms / 3600000));
+  return t('lvt.hoursUnit', { n: hours });
+}
+
+// --- Coach Yak: daily AI check-in ----------------------------------------
+// A dedicated "coach" persona (avatars/coach.png, not part of the Yak
+// Evolution ladder — a fixed mascot for this feature, always the same
+// character) that greets the learner once a day on the dashboard with a
+// real, specific pep talk generated from their actual recent activity (see
+// generate-coach-checkin). Cached in profiles.coach_checkin_date /
+// coach_checkin_message so it's written once per calendar day, not
+// regenerated on every dashboard load. Any later same-day dashboard visit
+// instead shows a quick canned hype line (HYPE_PHRASE_KEYS below) — cheap,
+// instant, no AI call, so navigating back to the dashboard mid-session
+// never feels like it's nagging with the same speech twice.
+const HYPE_PHRASE_KEYS = [
+  'coach.hype1', 'coach.hype2', 'coach.hype3', 'coach.hype4',
+  'coach.hype5', 'coach.hype6', 'coach.hype7', 'coach.hype8',
+];
+function randomHypePhrase() {
+  return t(HYPE_PHRASE_KEYS[Math.floor(Math.random() * HYPE_PHRASE_KEYS.length)]);
+}
+
+// Returns { isNew, message }. isNew=true means this is the first dashboard
+// visit today and message is the freshly generated (and now cached) full
+// pep talk. isNew=false means today's check-in already happened (or the
+// generation call failed) — caller should show a random hype phrase
+// instead in that case.
+async function getDailyCoachCheckin(user, profile) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (profile.coach_checkin_date === today && profile.coach_checkin_message) {
+    return { isNew: false, message: null };
+  }
+  try {
+    const stats = await gatherProgressStats(user.id, profile.target_language);
+    const token = await getAuthToken();
+    const res = await fetch(GENERATE_COACH_CHECKIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        targetLanguage: langByCode(profile.target_language).name,
+        nativeLanguage: profile.native_language,
+        tierLabel: profile.assessed_level ? tierLabel(profile.assessed_level) : null,
+        streak: profile.streak, xp: profile.xp,
+        focusAreas: profile.assessed_focus_areas || [],
+        stats,
+      }),
+    });
+    const raw = await res.text();
+    const data = JSON.parse(raw);
+    if (res.ok && !data.error && data.message) {
+      const update = { coach_checkin_date: today, coach_checkin_message: data.message };
+      await db.from('profiles').update(update).eq('id', user.id);
+      Object.assign(profile, update);
+      return { isNew: true, message: data.message };
+    }
+  } catch (e) { /* best-effort — dashboard still works without it */ }
+  return { isNew: false, message: null };
 }
 
 // Pulls a recent-activity sample (per module, capped and language-scoped)
