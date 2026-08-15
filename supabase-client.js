@@ -387,6 +387,132 @@ async function recordActivityAndMaybeEvaluate(user, profile) {
   return null;
 }
 
+// --- Social + rewards, Phase 1: Trail Markers (badges), Basecamp
+// (leaderboard), Trail Cheers -------------------------------------------
+// Badge catalog lives in code (same pattern as LEVELS/TIERS/INTERESTS) —
+// only which ones a user has actually earned is persisted, in user_badges.
+// Deliberately not Duolingo's owl/flame/gems: waypoints mark real CEFR
+// progress on the trail, and the rest reward balanced practice across
+// YakYak's modules rather than pure login streaks.
+const BADGES = [
+  { code: 'waypoint_pre_a1', name: 'Basecamp', icon: '⛺', desc: 'Started the trail', category: 'waypoint' },
+  { code: 'waypoint_a1', name: 'First Ridge', icon: '🥾', desc: 'Reached A1', category: 'waypoint' },
+  { code: 'waypoint_a2', name: 'Cloud Pass', icon: '☁️', desc: 'Reached A2', category: 'waypoint' },
+  { code: 'waypoint_b1', name: 'Alpine Meadow', icon: '🌼', desc: 'Reached B1', category: 'waypoint' },
+  { code: 'waypoint_b2', name: 'Summit Ridge', icon: '🏔️', desc: 'Reached B2', category: 'waypoint' },
+  { code: 'waypoint_c1', name: 'The Peak', icon: '🏁', desc: 'Reached C1', category: 'waypoint' },
+  { code: 'waypoint_c2', name: 'Beyond the Summit', icon: '🌟', desc: 'Reached C2', category: 'waypoint' },
+  { code: 'chatterbox', name: 'Chatterbox', icon: '💬', desc: 'Completed 10 Natural Dialog conversations', category: 'skill' },
+  { code: 'quick_ear', name: 'Quick Ear', icon: '🎧', desc: 'Scored 90+ average pronunciation on 10 Listen & Read sessions', category: 'skill' },
+  { code: 'bookworm', name: 'Bookworm', icon: '📖', desc: 'Finished 15 Reading Library passages', category: 'skill' },
+  { code: 'wordsmith', name: 'Wordsmith', icon: '📚', desc: 'Learned 200 vocabulary words', category: 'skill' },
+  { code: 'grammar_sleuth', name: 'Grammar Sleuth', icon: '🔍', desc: 'Corrected 25 grammar mistakes', category: 'skill' },
+  { code: 'early_bird', name: 'Early Bird', icon: '🌅', desc: 'Practiced before 7am, 5 times', category: 'personality' },
+  { code: 'night_owl', name: 'Night Owl', icon: '🦉', desc: 'Practiced after 10pm, 5 times', category: 'personality' },
+  { code: 'comeback_kid', name: 'Comeback Kid', icon: '🔥', desc: 'Rebuilt a streak of 5+ after breaking one', category: 'personality' },
+];
+
+// Centralizes the XP/streak/last-activity update every module performs at
+// session-finish (previously duplicated across 5 files). Also detects a
+// "streak break" (losing a streak that was 5+) for the Comeback Kid badge,
+// and logs an xp_events row so Basecamp's "this week" leaderboard view has
+// a timestamped record to sum — profiles.xp is cumulative-only, and a
+// couple of modules never had a completions table to derive weekly XP from
+// otherwise. Best-effort on the xp_events insert; must not block finishing.
+async function updateStreakAndActivity(user, profile, xpEarned, moduleName) {
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const isNewDay = profile.last_activity_date !== today;
+  const newStreak = profile.last_activity_date === today ? profile.streak
+    : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
+  const brokeAStreak = isNewDay && newStreak === 1 && profile.streak >= 5;
+  const hadBroken5plus = !!(profile.had_broken_streak_5plus || brokeAStreak);
+
+  const update = {
+    xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
+    had_broken_streak_5plus: hadBroken5plus,
+  };
+  await db.from('profiles').update(update).eq('id', user.id);
+  Object.assign(profile, update);
+
+  try { await db.from('xp_events').insert({ user_id: user.id, module: moduleName, xp_earned: xpEarned }); } catch (e) {}
+}
+
+// Call once per completed activity, right after updateStreakAndActivity.
+// Checks every badge's threshold against fresh counts and awards any
+// newly-earned ones. Returns the array of newly-earned badge objects (for
+// a small celebration card), or [] — never throws, best-effort only.
+async function checkAndAwardBadges(user, profile) {
+  try {
+    const hour = new Date().getHours();
+    const profileUpdate = {};
+    if (hour < 7) profileUpdate.early_bird_count = (profile.early_bird_count || 0) + 1;
+    if (hour >= 22) profileUpdate.night_owl_count = (profile.night_owl_count || 0) + 1;
+    if (Object.keys(profileUpdate).length) {
+      await db.from('profiles').update(profileUpdate).eq('id', user.id);
+      Object.assign(profile, profileUpdate);
+    }
+
+    const [existingRes, rpRes, icRes, rcRes, smRes] = await Promise.all([
+      db.from('user_badges').select('badge_code').eq('user_id', user.id),
+      db.from('roleplay_sessions').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'completed'),
+      db.from('input_completions').select('pronunciation_avg').eq('user_id', user.id),
+      db.from('reading_completions').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+      db.from('skill_mastery').select('skill_type, correct_count').eq('user_id', user.id),
+    ]);
+
+    const earned = new Set((existingRes.data || []).map(r => r.badge_code));
+    const chatterboxCount = rpRes.count || 0;
+    const quickEarCount = (icRes.data || []).filter(r => r.pronunciation_avg !== null && r.pronunciation_avg >= 90).length;
+    const bookwormCount = rcRes.count || 0;
+    const smRows = smRes.data || [];
+    const wordsmithCount = smRows.filter(r => r.skill_type === 'vocab').length;
+    const grammarSleuthCount = smRows.filter(r => r.skill_type === 'grammar').reduce((s, r) => s + (r.correct_count || 0), 0);
+
+    const qualifies = {
+      waypoint_pre_a1: true,
+      waypoint_a1: profile.current_level === 'A1',
+      waypoint_a2: profile.current_level === 'A2',
+      waypoint_b1: profile.current_level === 'B1',
+      waypoint_b2: profile.current_level === 'B2',
+      waypoint_c1: profile.current_level === 'C1',
+      waypoint_c2: profile.current_level === 'C2',
+      chatterbox: chatterboxCount >= 10,
+      quick_ear: quickEarCount >= 10,
+      bookworm: bookwormCount >= 15,
+      wordsmith: wordsmithCount >= 200,
+      grammar_sleuth: grammarSleuthCount >= 25,
+      early_bird: (profile.early_bird_count || 0) >= 5,
+      night_owl: (profile.night_owl_count || 0) >= 5,
+      comeback_kid: !!(profile.had_broken_streak_5plus && profile.streak >= 5),
+    };
+
+    const toAward = BADGES.filter(b => !earned.has(b.code) && qualifies[b.code]);
+    if (toAward.length) {
+      await db.from('user_badges').insert(toAward.map(b => ({ user_id: user.id, badge_code: b.code })));
+    }
+    return toAward;
+  } catch (e) {
+    return [];
+  }
+}
+
+function badgesEarnedHTML(badges) {
+  if (!badges || !badges.length) return '';
+  return `
+    <div class="card" style="margin-top:14px;background:var(--mint-soft);border-color:var(--mint);text-align:center;">
+      <div style="font-size:13px;font-weight:800;color:var(--mint);margin-bottom:10px;">${t('badge.earned')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">
+        ${badges.map(b => `
+          <div style="background:var(--card);border-radius:14px;padding:12px 14px;min-width:110px;">
+            <div style="font-size:28px;">${b.icon}</div>
+            <div style="font-weight:800;font-size:13px;margin-top:4px;">${b.name}</div>
+            <div class="text-dim" style="font-size:11px;margin-top:2px;">${b.desc}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
 function celebrationHTML(levelUpResult) {
   return `
     <div class="card" style="margin-top:18px;background:var(--mint-soft);border-color:var(--mint);text-align:center;">

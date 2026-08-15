@@ -16,6 +16,7 @@
       <a class="nav-item active" href="dashboard.html" id="navHome">🏠<span>Home</span></a>
       <a class="nav-item" href="review.html" id="navProgress">📊<span>Progress</span></a>
       <a class="nav-item" href="roleplay.html" id="navTalk">💬<span>Talk</span></a>
+      <a class="nav-item" href="basecamp.html" id="navBasecamp">🏕️<span>Basecamp</span></a>
       <button class="nav-item" id="signOutBtn" style="cursor:pointer;">👤<span id="navSignoutLabel">Sign out</span></button>
     </div>
   </div>
@@ -60,6 +61,7 @@
 
     function renderHeader() {
       document.getElementById('dashContent').innerHTML = `
+        <div id="cheerBannerSlot"></div>
         <div class="dash-header">
           <div style="display:flex;align-items:center;gap:10px;">
             <div id="mascotSlot" style="width:38px;"></div>
@@ -286,6 +288,7 @@
       document.getElementById('navHome').querySelector('span').textContent = t('nav.home');
       document.getElementById('navProgress').querySelector('span').textContent = t('nav.progress');
       document.getElementById('navTalk').querySelector('span').textContent = t('nav.talk');
+      document.getElementById('navBasecamp').querySelector('span').textContent = t('nav.basecamp');
       document.getElementById('navSignoutLabel').textContent = t('nav.signout');
 
       // Landing on the dashboard always starts a fresh choice — any plan
@@ -300,6 +303,20 @@
 
       renderHeader();
       renderFork();
+
+      // Best-effort: let them know if anyone cheered them on since they last
+      // checked Basecamp. Doesn't mark cheers seen here — that happens when
+      // they actually open Basecamp, so the banner is a lightweight nudge.
+      try {
+        const { count: cheerCount } = await db.from('cheers')
+          .select('id', { count: 'exact', head: true }).eq('to_user_id', user.id).eq('seen', false);
+        if (cheerCount) {
+          document.getElementById('cheerBannerSlot').innerHTML = `
+            <a class="card" href="basecamp.html" style="display:block;margin-bottom:14px;background:var(--mint-soft);border-color:var(--mint);text-decoration:none;color:var(--text);font-size:13px;">
+              🤝 ${t('db.cheerBanner', { n: cheerCount })}
+            </a>`;
+        }
+      } catch (e) {}
 
       const signOutBtn = document.getElementById('signOutBtn');
       if (DEV_MODE) {

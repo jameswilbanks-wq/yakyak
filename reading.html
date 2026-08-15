@@ -279,17 +279,11 @@
         });
       }
 
-      const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const newStreak = profile.last_activity_date === today ? profile.streak
-        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
-      await db.from('profiles').update({
-        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
-      }).eq('id', user.id);
-      profile.xp += xpEarned; profile.streak = newStreak; profile.last_activity_date = today;
+      await updateStreakAndActivity(user, profile, xpEarned, 'reading');
 
       const levelUp = await recordActivityAndMaybeEvaluate(user, profile);
-      if (levelUp) document.getElementById('levelUpSlot').innerHTML = celebrationHTML(levelUp);
+      const newBadges = await checkAndAwardBadges(user, profile);
+      document.getElementById('levelUpSlot').innerHTML = (levelUp ? celebrationHTML(levelUp) : '') + badgesEarnedHTML(newBadges);
     }
 
     document.getElementById('exitBtn').addEventListener('click', () => { stopPlayback(); window.location.href = 'dashboard.html'; });

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Basecamp</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <button class="icon-btn" id="exitBtn">✕</button>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="basecampBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    // Basecamp: the family leaderboard + Trail Cheers + a personal Trail
+    // Markers (badge) collection. Everyone in the account shares one board
+    // regardless of which language they're learning — each row shows its
+    // own target language as a tag so a mixed-language household still
+    // reads clearly. "This week" is summed live from xp_events (logged by
+    // updateStreakAndActivity in js/supabase-client.js); "all-time" reads
+    // straight off profiles.xp.
+    let user = null, profile = null, people = [], tab = 'week', cheeredIds = new Set();
+
+    function renderLoading() {
+      document.getElementById('basecampBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('bc.loading')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function metricFor(p) { return tab === 'week' ? p.weekXp : p.allTimeXp; }
+
+    function render() {
+      const sorted = [...people].sort((a, b) => metricFor(b) - metricFor(a));
+      document.getElementById('basecampBody').innerHTML = `
+        <div class="lesson-body" style="padding:0;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+            <div id="mascotSlot2" style="width:34px;"></div>
+            <h1 style="font-size:23px;">${t('bc.title')}</h1>
+          </div>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:16px;">${t('bc.subtitle')}</p>
+
+          <div id="cheerNotif"></div>
+
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="chip${tab === 'week' ? ' active' : ''}" id="tabWeek">${t('bc.thisWeek')}</button>
+            <button class="chip${tab === 'all' ? ' active' : ''}" id="tabAll">${t('bc.allTime')}</button>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px;" id="peopleList"></div>
+
+          <div class="card" style="margin-top:22px;">
+            <span class="label">${t('bc.myTrailMarkers')}</span>
+            <p class="text-faint" style="font-size:11.5px;margin-top:2px;margin-bottom:14px;" id="badgeProgress"></p>
+            <div id="badgeGrid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+          </div>
+        </div>`;
+      document.getElementById('mascotSlot2').innerHTML = mascotHTML(34);
+      document.getElementById('tabWeek').addEventListener('click', () => { tab = 'week'; render(); });
+      document.getElementById('tabAll').addEventListener('click', () => { tab = 'all'; render(); });
+
+      document.getElementById('peopleList').innerHTML = sorted.map((p, i) => `
+        <div class="card" style="display:flex;align-items:center;gap:12px;padding:14px 16px;">
+          <span style="font-size:15px;font-weight:800;color:var(--text-faint);width:18px;">${i + 1}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:800;font-size:14.5px;">${p.name}${p.id === user.id ? ` · ${t('bc.you')}` : ''}</div>
+            <div class="text-faint" style="font-size:11.5px;margin-top:2px;">${langByCode(p.target_language).name} · ${p.current_level} · 🔥 ${p.streak} · 🏅 ${p.badgeCount}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:800;font-size:15px;color:var(--accent-ink);">✨ ${metricFor(p)}</div>
+            ${p.id !== user.id ? `<button class="btn-ghost" data-cheer="${p.id}" style="margin-top:4px;font-size:12px;padding:6px 10px;">${cheeredIds.has(p.id) ? t('bc.cheered') : '🤝 ' + t('bc.cheerBtn')}</button>` : ''}
+          </div>
+        </div>`).join('');
+
+      document.querySelectorAll('[data-cheer]').forEach(btn => btn.addEventListener('click', async () => {
+        const toId = btn.dataset.cheer;
+        if (cheeredIds.has(toId)) return;
+        cheeredIds.add(toId);
+        btn.textContent = t('bc.cheered');
+        btn.disabled = true;
+        try { await db.from('cheers').insert({ from_user_id: user.id, to_user_id: toId }); } catch (e) {}
+      }));
+
+      const me = people.find(p => p.id === user.id) || { badgeCodes: [] };
+      const earnedCodes = new Set(me.badgeCodes);
+      document.getElementById('badgeProgress').textContent = t('bc.markersEarned', { n: earnedCodes.size, total: BADGES.length });
+      document.getElementById('badgeGrid').innerHTML = BADGES.map(b => `
+        <div style="text-align:center;width:76px;opacity:${earnedCodes.has(b.code) ? '1' : '.32'};" title="${b.desc}">
+          <div style="font-size:26px;">${b.icon}</div>
+          <div style="font-size:10.5px;font-weight:700;margin-top:2px;line-height:1.2;">${b.name}</div>
+        </div>`).join('');
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+      renderLoading();
+      document.getElementById('topLabel').textContent = t('bc.title');
+
+      // Monday 00:00 UTC of the current week — a simple, consistent cutoff
+      // for "this week" without needing a server-side scheduled reset.
+      const weekStart = new Date();
+      weekStart.setUTCHours(0, 0, 0, 0);
+      weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
+      const weekStartIso = weekStart.toISOString();
+
+      const [{ data: profiles }, { data: badgeRows }, { data: xpRows }, { data: unseenCheers }] = await Promise.all([
+        db.from('profiles').select('id, name, target_language, current_level, xp, streak'),
+        db.from('user_badges').select('user_id, badge_code'),
+        db.from('xp_events').select('user_id, xp_earned').gte('created_at', weekStartIso),
+        db.from('cheers').select('id, from_user_id').eq('to_user_id', user.id).eq('seen', false),
+      ]);
+
+      const weekTotals = {};
+      (xpRows || []).forEach(r => { weekTotals[r.user_id] = (weekTotals[r.user_id] || 0) + (r.xp_earned || 0); });
+      const badgesByUser = {};
+      (badgeRows || []).forEach(r => { (badgesByUser[r.user_id] = badgesByUser[r.user_id] || []).push(r.badge_code); });
+
+      people = (profiles || []).map(p => ({
+        id: p.id, name: p.name || t('bc.someone'), target_language: p.target_language,
+        current_level: p.current_level, streak: p.streak || 0, allTimeXp: p.xp || 0,
+        weekXp: weekTotals[p.id] || 0, badgeCodes: badgesByUser[p.id] || [],
+        badgeCount: (badgesByUser[p.id] || []).length,
+      }));
+
+      render();
+
+      if (unseenCheers && unseenCheers.length) {
+        const byName = {};
+        (profiles || []).forEach(p => { byName[p.id] = p.name; });
+        const names = [...new Set(unseenCheers.map(c => byName[c.from_user_id]).filter(Boolean))];
+        document.getElementById('cheerNotif').innerHTML = `
+          <div class="card" style="background:var(--mint-soft);border-color:var(--mint);margin-bottom:16px;font-size:13px;">
+            🤝 ${names.length ? t('bc.cheerNotifNamed', { names: names.join(', ') }) : t('bc.cheerNotif', { n: unseenCheers.length })}
+          </div>`;
+        try { await db.from('cheers').update({ seen: true }).eq('to_user_id', user.id).eq('seen', false); } catch (e) {}
+      }
+    })();
+  </script>
+</body>
+</html>
