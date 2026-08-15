@@ -93,6 +93,7 @@
             partOfSpeech: w.partOfSpeech || '',
             exampleTarget: w.exampleTarget || '',
             exampleNative: w.exampleNative || '',
+            exampleChunks: Array.isArray(w.exampleChunks) ? w.exampleChunks : [],
           });
         }
 
@@ -106,6 +107,15 @@
     function renderLearnCard() {
       const w = words[learnIdx];
       const tts = langByCode(profile.target_language).tts;
+      // Chunk-aligned rendering (shared with reading.html — see
+      // sentenceToChunkedSpansHTML/wireChunkHover in supabase-client.js)
+      // lets hovering either language bump/bold its match in the other, the
+      // same behavior the Reading Library has. Falls back to plain text if
+      // a cached/older response ever lacks exampleChunks.
+      const hasChunks = w.exampleChunks && w.exampleChunks.length > 0;
+      const sentenceHTML = hasChunks
+        ? sentenceToChunkedSpansHTML(w.exampleChunks, learnIdx)
+        : { targetHTML: escapeHtml(w.exampleTarget || ''), nativeHTML: escapeHtml(w.exampleNative || '') };
       document.getElementById('topLabel').textContent = `${planStepPrefix()}${t('vc.learning')} · ${learnIdx + 1}/${words.length}`;
       document.getElementById('vocabBody').innerHTML = `
         <div class="lesson-body">
@@ -118,17 +128,24 @@
             <p class="text-dim" style="font-size:15px;margin-top:6px;">${w.nativeText}</p>
             ${w.exampleTarget ? `
               <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border);text-align:left;">
-                <p style="font-size:14px;font-weight:600;">${w.exampleTarget}</p>
-                <p class="text-faint" style="font-size:12.5px;margin-top:3px;">${w.exampleNative}</p>
+                <div style="display:flex;align-items:baseline;gap:8px;">
+                  <button class="icon-btn icon-btn-sm" id="sentenceSpeakBtn" style="flex-shrink:0;">🔊</button>
+                  <p style="font-size:14px;font-weight:600;line-height:1.6;">${sentenceHTML.targetHTML}</p>
+                </div>
+                <p class="text-faint" style="font-size:12.5px;line-height:1.5;margin-top:3px;margin-left:34px;">${sentenceHTML.nativeHTML}</p>
+                <p class="text-faint" style="font-size:10.5px;margin-top:8px;margin-left:34px;">${t('rl.hoverHint')}</p>
               </div>` : ''}
           </div>
           <button class="btn-primary" id="nextLearnBtn" style="margin-top:22px;width:100%;justify-content:center;">${learnIdx + 1 < words.length ? t('vc.next') : t('vc.startQuiz')}</button>
         </div>`;
       document.getElementById('speakBtn').addEventListener('click', () => speak(w.targetText, tts));
+      const sentenceSpeakBtn = document.getElementById('sentenceSpeakBtn');
+      if (sentenceSpeakBtn) sentenceSpeakBtn.addEventListener('click', () => speak(w.exampleTarget, tts));
       document.getElementById('nextLearnBtn').addEventListener('click', () => {
         if (learnIdx + 1 < words.length) { learnIdx++; renderLearnCard(); }
         else startQuiz();
       });
+      wireChunkHover();
     }
 
     function startQuiz() {

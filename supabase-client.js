@@ -643,6 +643,67 @@ function grammarLessonHTML(result) {
     </div>`;
 }
 
+// --- Shared chunk-hover rendering ---------------------------------------
+// Any screen that shows a target-language sentence paired with its native
+// translation as aligned {target, native} chunks (see generate-extensive-
+// passage and generate-vocab-batch — both ask the model for this shape, and
+// both derive their flat sentence strings by joining chunk text) can use
+// these three helpers to render bump-on-hover spans instead of writing the
+// wiring again per page. Originally lived only in reading.html; pulled out
+// here once vocab.html needed the same behavior for example sentences.
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Wraps each chunk of the TARGET side in an "rl-chunk" span (itself
+// containing "rl-word" spans, individually addressable so a per-word TTS
+// onboundary highlighter can still work alongside this) and each chunk of
+// the NATIVE side in a matching "rl-chunk" span. Both sides share a
+// data-align id per chunk, which is all wireChunkHover() needs to bump the
+// right pair on hover. sIdx should be unique per sentence rendered
+// concurrently in the DOM (e.g. the sentence's index in a passage, or just
+// 0 for a single-sentence card) so data-align ids never collide.
+function sentenceToChunkedSpansHTML(chunks, sIdx) {
+  let charPos = 0;
+  const targetParts = [];
+  const nativeParts = [];
+  chunks.forEach((c, cIdx) => {
+    if (cIdx > 0) charPos += 1; // the joining space between chunks
+    const alignId = `s${sIdx}-c${cIdx}`;
+    let wordsHTML = '';
+    let lastLocal = 0;
+    const wordRe = /\S+/g;
+    let m;
+    while ((m = wordRe.exec(c.target))) {
+      wordsHTML += escapeHtml(c.target.slice(lastLocal, m.index));
+      wordsHTML += `<span class="rl-word" data-start="${charPos + m.index}">${escapeHtml(m[0])}</span>`;
+      lastLocal = m.index + m[0].length;
+    }
+    wordsHTML += escapeHtml(c.target.slice(lastLocal));
+    targetParts.push(`<span class="rl-chunk" data-align="${alignId}">${wordsHTML}</span>`);
+    nativeParts.push(`<span class="rl-chunk" data-align="${alignId}">${escapeHtml(c.native || '')}</span>`);
+    charPos += c.target.length;
+  });
+  return { targetHTML: targetParts.join(' '), nativeHTML: nativeParts.join(' ') };
+}
+
+// Groups every .rl-chunk currently in the DOM by its data-align id and
+// wires hover so entering either side of a pair bumps/bolds both. Call
+// after every re-render that includes chunked spans.
+function wireChunkHover() {
+  const groups = {};
+  document.querySelectorAll('.rl-chunk').forEach(el => {
+    (groups[el.dataset.align] = groups[el.dataset.align] || []).push(el);
+  });
+  Object.values(groups).forEach(els => {
+    els.forEach(el => {
+      el.addEventListener('mouseenter', () => els.forEach(e => e.classList.add('rl-chunk-hover')));
+      el.addEventListener('mouseleave', () => els.forEach(e => e.classList.remove('rl-chunk-hover')));
+    });
+  });
+}
+
 function mascotHTML(size) {
   size = size || 40;
   return `<div class="mascot" style="width:${size}px;height:${size}px;">

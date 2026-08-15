@@ -106,10 +106,6 @@
     // support elsewhere varies) — if it doesn't fire, the sentence still
     // reads aloud fine, it just won't visibly highlight.
 
-    function escapeHtml(str) {
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
     function sentenceToSpansHTML(text) {
       let html = '';
       let last = 0;
@@ -124,57 +120,11 @@
       return html;
     }
 
-    // Chunk-aware version of the above: instead of one plain target string,
-    // each sentence now carries aligned {target, native} chunks (word- or
-    // short-phrase-level — see generate-extensive-passage v3). This wraps
-    // each chunk of the TARGET side in a "rl-chunk" span (itself containing
-    // "rl-word" spans, still individually addressable so the existing TTS
-    // onboundary highlighter keeps working untouched) and each chunk of the
-    // NATIVE side in a matching "rl-chunk" span. Both sides share a
-    // data-align id per chunk, which is all wireChunkHover() needs to bump
-    // the right pair on hover. Word char-offsets are computed against the
-    // same single-space-joined string the server built sentence.target
-    // from, so TTS highlighting lines up exactly.
-    function sentenceToChunkedSpansHTML(chunks, sIdx) {
-      let charPos = 0;
-      const targetParts = [];
-      const nativeParts = [];
-      chunks.forEach((c, cIdx) => {
-        if (cIdx > 0) charPos += 1; // the joining space between chunks
-        const alignId = `s${sIdx}-c${cIdx}`;
-        let wordsHTML = '';
-        let lastLocal = 0;
-        const wordRe = /\S+/g;
-        let m;
-        while ((m = wordRe.exec(c.target))) {
-          wordsHTML += escapeHtml(c.target.slice(lastLocal, m.index));
-          wordsHTML += `<span class="rl-word" data-start="${charPos + m.index}">${escapeHtml(m[0])}</span>`;
-          lastLocal = m.index + m[0].length;
-        }
-        wordsHTML += escapeHtml(c.target.slice(lastLocal));
-        targetParts.push(`<span class="rl-chunk" data-align="${alignId}">${wordsHTML}</span>`);
-        nativeParts.push(`<span class="rl-chunk" data-align="${alignId}">${escapeHtml(c.native || '')}</span>`);
-        charPos += c.target.length;
-      });
-      return { targetHTML: targetParts.join(' '), nativeHTML: nativeParts.join(' ') };
-    }
-
-    // Groups every .rl-chunk in the current render by its data-align id
-    // (at most 2 elements per group: the target-side chunk and, if the
-    // translation line is showing, its native-side match) and wires hover
-    // so entering either bumps/bolds both. Call after every re-render.
-    function wireChunkHover() {
-      const groups = {};
-      document.querySelectorAll('.rl-chunk').forEach(el => {
-        (groups[el.dataset.align] = groups[el.dataset.align] || []).push(el);
-      });
-      Object.values(groups).forEach(els => {
-        els.forEach(el => {
-          el.addEventListener('mouseenter', () => els.forEach(e => e.classList.add('rl-chunk-hover')));
-          el.addEventListener('mouseleave', () => els.forEach(e => e.classList.remove('rl-chunk-hover')));
-        });
-      });
-    }
+    // sentenceToChunkedSpansHTML and wireChunkHover now live in
+    // supabase-client.js (shared with vocab.html's example-sentence
+    // hover-align). Word char-offsets are computed against the same
+    // single-space-joined string the server built sentence.target from, so
+    // TTS highlighting below still lines up exactly.
 
     function highlightWordAt(sentenceEl, charIndex) {
       const spans = sentenceEl.querySelectorAll('.rl-word');
