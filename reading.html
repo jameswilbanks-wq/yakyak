@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Reading Library</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <button class="icon-btn" id="exitBtn">✕</button>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="readingBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    let user = null, profile = null, passage = null, passageId = null, sessionTopic = null;
+    let qIdx = 0, results = [];
+
+    function renderLoading() {
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('rl.building')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderError(message) {
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-center error-box">
+          <div style="font-size:30px;">⚠️</div>
+          <p style="font-weight:700;">${t('rl.couldntBuild')}</p>
+          <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
+        </div>`;
+      document.getElementById('retryBtn').addEventListener('click', loadPassage);
+    }
+
+    async function loadPassage() {
+      renderLoading();
+      try {
+        const avoid = await fetchRecentValues('reading_passages', 'title', profile.target_language, profile.current_level, 8);
+        const token = await getAuthToken();
+        const res = await fetch(GENERATE_EXTENSIVE_PASSAGE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+            level: profile.current_level,
+            interest: sessionTopic || 'daily life',
+            angle: randomAngle(),
+            avoid,
+          }),
+        });
+        const raw = await res.text();
+        if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.body || !data.questions || !data.questions.length) throw new Error('No passage returned');
+        passage = data;
+
+        const { data: row } = await db.from('reading_passages').insert({
+          target_language: profile.target_language,
+          native_language: profile.native_language,
+          level: profile.current_level,
+          title: data.title,
+          body: data.body,
+          comprehension_questions: data.questions,
+          interest_tag: sessionTopic || null,
+        }).select('id').single();
+        passageId = row ? row.id : null;
+
+        renderPassage();
+      } catch (e) {
+        renderError(e.message || 'Unknown error');
+      }
+    }
+
+    function renderPassage() {
+      const tts = langByCode(profile.target_language).tts;
+      document.getElementById('topLabel').textContent = t('rl.freeReading');
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="icon-btn icon-btn-sm" id="listenBtn">🔊</button>
+            <h1 style="font-size:19px;font-family:var(--font-display);">${passage.title}</h1>
+          </div>
+          <div class="card" style="margin-top:14px;white-space:pre-wrap;line-height:1.7;font-size:15.5px;">${passage.body}</div>
+          ${passage.glossary && passage.glossary.length ? `
+            <div class="card" style="margin-top:14px;">
+              <span class="label" style="margin-bottom:6px;">${t('rl.glossary')}</span>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                ${passage.glossary.map(g => `<div style="display:flex;gap:8px;font-size:13px;"><b style="font-family:var(--font-display);">${g.term}</b><span class="text-dim">— ${g.meaning}</span></div>`).join('')}
+              </div>
+            </div>` : ''}
+          <button class="btn-primary" id="doneReadingBtn" style="margin-top:20px;width:100%;justify-content:center;">${t('rl.doneReading')}</button>
+        </div>`;
+      document.getElementById('listenBtn').addEventListener('click', () => speak(passage.body, tts));
+      document.getElementById('doneReadingBtn').addEventListener('click', startQuestions);
+    }
+
+    function startQuestions() {
+      qIdx = 0;
+      results = [];
+      renderQuestion();
+    }
+
+    function renderQuestion() {
+      const q = passage.questions[qIdx];
+      document.getElementById('topLabel').textContent = `${t('rl.comprehension')} · ${qIdx + 1}/${passage.questions.length}`;
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          <h2 style="font-size:18px;margin-bottom:16px;">${q.question}</h2>
+          <div style="display:flex;flex-direction:column;gap:10px;" id="optionsList"></div>
+          <div id="nextQBtn"></div>
+        </div>`;
+      const list = document.getElementById('optionsList');
+      list.innerHTML = q.options.map((opt, i) => `<button class="option" data-i="${i}">${opt}</button>`).join('');
+      list.querySelectorAll('.option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const chosen = parseInt(btn.dataset.i);
+          const correct = chosen === q.answerIndex;
+          results.push(correct);
+          list.querySelectorAll('.option').forEach(b => {
+            b.disabled = true;
+            if (parseInt(b.dataset.i) === q.answerIndex) b.classList.add('correct');
+            else if (b === btn) b.classList.add('wrong');
+          });
+          document.getElementById('nextQBtn').innerHTML = `<button class="btn-primary" id="nextBtn" style="margin-top:20px;width:100%;justify-content:center;">${qIdx + 1 < passage.questions.length ? t('rl.nextQuestion') : t('rl.finish')}</button>`;
+          document.getElementById('nextBtn').addEventListener('click', () => {
+            if (qIdx + 1 < passage.questions.length) { qIdx++; renderQuestion(); }
+            else finishSession();
+          });
+        });
+      });
+    }
+
+    async function finishSession() {
+      const correctCount = results.filter(Boolean).length;
+      const xpEarned = 12 + correctCount * 5;
+
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:40px;">${correctCount === results.length ? '🎉' : '📖'}</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('rl.passageComplete')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('rl.correctOfTotal', { c: correctCount, t: results.length })}</p>
+          <div id="levelUpSlot" style="width:100%;"></div>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rl.backToHome')}</button>
+        </div>`;
+      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+      if (passageId) {
+        await db.from('reading_completions').insert({
+          user_id: user.id, passage_id: passageId, score: correctCount, xp_earned: xpEarned,
+        });
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = profile.last_activity_date === today ? profile.streak
+        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
+      await db.from('profiles').update({
+        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
+      }).eq('id', user.id);
+      profile.xp += xpEarned; profile.streak = newStreak; profile.last_activity_date = today;
+
+      const levelUp = await recordActivityAndMaybeEvaluate(user, profile);
+      if (levelUp) document.getElementById('levelUpSlot').innerHTML = celebrationHTML(levelUp);
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+      document.getElementById('topLabel').textContent = '';
+      renderTopicPicker(document.getElementById('readingBody'), {
+        initial: getLastTopics(profile),
+        onStart: async (selection) => {
+          await saveLastTopics(user.id, selection);
+          sessionTopic = pickTopicForSession(selection);
+          loadPassage();
+        },
+      });
+    })();
+  </script>
+</body>
+</html>
