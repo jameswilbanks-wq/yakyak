@@ -42,13 +42,13 @@
     // one-time onboarding pick meant every lesson forever used the same
     // narrow topic list. See INTERESTS/renderTopicPicker in supabase-client.js.
 
-    const steps = ['name', 'level', 'motivation', 'style'];
+    const steps = ['name', 'level', 'motivation', 'style', 'avatar'];
     let stepIndex = 0;
     let user = null;
 
     const form = {
       name: '', native: 'English', learning: null, current: null, target: null,
-      motivations: [], style: null,
+      motivations: [], style: null, avatar: null,
     };
 
     function valid() {
@@ -57,6 +57,7 @@
         case 'level': return form.current && form.target;
         case 'motivation': return form.motivations.length > 0;
         case 'style': return form.style !== null;
+        case 'avatar': return form.avatar !== null;
       }
     }
 
@@ -174,6 +175,21 @@
         list.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => { form.style = b.dataset.s; renderStep(); }));
       }
 
+      if (s === 'avatar') {
+        content.innerHTML = `
+          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.pickYak')}</h1>
+          <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('ob.pickYakSub')}</p>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;" id="avatarGrid"></div>
+        `;
+        const grid = document.getElementById('avatarGrid');
+        grid.innerHTML = AVATARS.map(a => `
+          <button class="tile${form.avatar === a.id ? ' active' : ''}" data-a="${a.id}" style="align-items:center;width:92px;">
+            ${yakAvatarHTML(a.id, 60, [])}
+            <span style="font-size:11.5px;font-weight:700;margin-top:4px;">${t(a.nameKey)}</span>
+          </button>`).join('');
+        grid.querySelectorAll('.tile').forEach(b => b.addEventListener('click', () => { form.avatar = b.dataset.a; renderStep(); }));
+      }
+
       renderFooter();
     }
 
@@ -205,6 +221,7 @@
         target_level: form.target,
         learning_style: form.style,
         motivations: form.motivations,
+        avatar_id: form.avatar,
       });
 
       if (error) {
