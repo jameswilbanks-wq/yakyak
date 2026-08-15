@@ -13,6 +13,7 @@ const GRADE_PRONUNCIATION_URL = SUPABASE_URL + "/functions/v1/grade-pronunciatio
 const EVALUATE_PROGRESS_URL = SUPABASE_URL + "/functions/v1/evaluate-progress";
 const GENERATE_VOCAB_URL = SUPABASE_URL + "/functions/v1/generate-vocab-batch";
 const GENERATE_PLAN_URL = SUPABASE_URL + "/functions/v1/generate-lesson-plan";
+const GENERATE_EXTENSIVE_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-extensive-passage";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 

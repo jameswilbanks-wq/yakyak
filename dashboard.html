@@ -241,6 +241,13 @@
         </div>
 
         <div class="card" style="margin-top:14px;">
+          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">📖 ${t('db.readingChip')}</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.readingTitle')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.readingDesc', { lang: langDisplay(learning.code) })}</p>
+          <button class="btn-primary" id="startReadingBtn">${t('db.startReading')}</button>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
             <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">📚 ${t('db.vocabChip')}</span>
             <span class="text-faint" style="font-size:11px;">${t('db.vocabProgress', { learned: vocabProgress.learned, target: vocabProgress.target, level: profile.current_level })}</span>
@@ -261,6 +268,7 @@
       document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
       document.getElementById('startTranslateBtn').addEventListener('click', () => { window.location.href = 'translate.html'; });
       document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
+      document.getElementById('startReadingBtn').addEventListener('click', () => { window.location.href = 'reading.html'; });
       document.getElementById('startVocabBtn').addEventListener('click', () => { window.location.href = 'vocab.html'; });
       renderLadder(document.getElementById('ladderSlot'), {
         mode: 'display', current: profile.current_level, target: profile.target_level, compact: true, progress: 40,
