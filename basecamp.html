@@ -10,7 +10,13 @@
 <body>
   <div class="lesson-wrap">
     <div class="lesson-top">
-      <button class="icon-btn" id="exitBtn">✕</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="mascot" style="width:20px;height:20px;">
+          <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
+          <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
+        </div>
+        <button class="icon-btn" id="exitBtn">✕</button>
+      </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
     <div id="basecampBody"></div>
@@ -24,7 +30,7 @@
     // regardless of which language they're learning — each row shows its
     // own target language as a tag so a mixed-language household still
     // reads clearly. "This week" is summed live from xp_events (logged by
-    // updateStreakAndActivity in js/supabase-client.js); "all-time" reads
+    // updateStreakAndActivity in supabase-client.js); "all-time" reads
     // straight off profiles.xp.
     let user = null, profile = null, people = [], tab = 'week', cheeredIds = new Set();
 

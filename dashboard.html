@@ -37,7 +37,7 @@
       openAvatarPicker(profile.avatar_id, async (id) => {
         profile.avatar_id = id;
         await db.from('profiles').update({ avatar_id: id }).eq('id', user.id);
-        document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(profile.avatar_id, 38, myBadgeCodes);
+        document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(profile.avatar_id, 76, myBadgeCodes);
       });
     }
 
@@ -69,10 +69,17 @@
 
     function renderHeader() {
       document.getElementById('dashContent').innerHTML = `
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px;">
+          <div class="mascot" style="width:20px;height:20px;">
+            <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
+            <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
+          </div>
+          <span style="font-weight:800;font-size:13px;color:var(--accent-ink);letter-spacing:.2px;">YakYak</span>
+        </div>
         <div id="cheerBannerSlot"></div>
         <div class="dash-header">
           <div style="display:flex;align-items:center;gap:10px;">
-            <button id="avatarBtn" title="${t('av.pickTitle')}" style="width:38px;height:41px;background:none;border:none;padding:0;cursor:pointer;"></button>
+            <button id="avatarBtn" title="${t('av.pickTitle')}" style="width:76px;height:auto;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;"></button>
             <div>
               <h1 style="font-size:22px;">${greeting()}, ${profile.name}.</h1>
               <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level}</p>
@@ -91,7 +98,7 @@
 
         <div id="mainSlot"></div>
       `;
-      document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(profile.avatar_id, 38, myBadgeCodes);
+      document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(profile.avatar_id, 76, myBadgeCodes);
       document.getElementById('avatarBtn').addEventListener('click', openAvatarPickerFromHeader);
       document.getElementById('tierBadge').textContent = profile.assessed_level
         ? tierLabel(profile.assessed_level)
