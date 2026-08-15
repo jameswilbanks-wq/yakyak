@@ -22,6 +22,15 @@
     let user = null, profile = null, passage = null, passageId = null, sessionTopic = null;
     let qIdx = 0, results = [];
 
+    // Playback state for the read-along player. Speed and the translation
+    // toggle are remembered per-device via localStorage since they're pure
+    // display preferences, not anything that needs to sync across devices.
+    const READING_RATE = { normal: 0.95, slow: 0.6 };
+    let speed = localStorage.getItem('yakyak_reading_speed') || 'normal';
+    let translationOn = localStorage.getItem('yakyak_reading_translation') === '1';
+    let isPlaying = false;
+    let stopRequested = false;
+
     function renderLoading() {
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-center">
@@ -63,7 +72,7 @@
         if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
         const data = JSON.parse(raw);
         if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
-        if (!data.body || !data.questions || !data.questions.length) throw new Error('No passage returned');
+        if (!data.sentences || !data.sentences.length || !data.questions || !data.questions.length) throw new Error('No passage returned');
         passage = data;
 
         const { data: row } = await db.from('reading_passages').insert({
@@ -83,16 +92,105 @@
       }
     }
 
+    // --- Read-along player: per-sentence TTS with live word highlighting ---
+    // One SpeechSynthesisUtterance per sentence (not the whole passage) so
+    // the browser's onboundary word-timing events stay reliable, and so a
+    // learner can replay just one sentence. Highlighting quality depends on
+    // the browser/voice actually firing word boundaries (Chrome does;
+    // support elsewhere varies) — if it doesn't fire, the sentence still
+    // reads aloud fine, it just won't visibly highlight.
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function sentenceToSpansHTML(text) {
+      let html = '';
+      let last = 0;
+      const regex = /\S+/g;
+      let m;
+      while ((m = regex.exec(text))) {
+        html += escapeHtml(text.slice(last, m.index));
+        html += `<span class="rl-word" data-start="${m.index}">${escapeHtml(m[0])}</span>`;
+        last = m.index + m[0].length;
+      }
+      html += escapeHtml(text.slice(last));
+      return html;
+    }
+
+    function highlightWordAt(sentenceEl, charIndex) {
+      const spans = sentenceEl.querySelectorAll('.rl-word');
+      let target = null;
+      spans.forEach(s => {
+        s.style.background = 'transparent';
+        if (parseInt(s.dataset.start, 10) <= charIndex) target = s;
+      });
+      if (target) { target.style.background = 'var(--mint-soft)'; target.style.borderRadius = '4px'; }
+    }
+
+    function clearHighlight(sentenceEl) {
+      sentenceEl.querySelectorAll('.rl-word').forEach(s => { s.style.background = 'transparent'; });
+    }
+
+    function updatePlayButtonLabel() {
+      const btn = document.getElementById('playAllBtn');
+      if (btn) btn.textContent = isPlaying ? ('⏸ ' + t('rl.stop')) : ('▶ ' + t('rl.playAll'));
+    }
+
+    function stopPlayback() {
+      stopRequested = true;
+      isPlaying = false;
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      updatePlayButtonLabel();
+    }
+
+    function playSentence(idx, onEnd) {
+      const s = passage.sentences[idx];
+      const sentenceEl = document.querySelector(`.rl-sentence[data-idx="${idx}"]`);
+      if (!('speechSynthesis' in window) || !sentenceEl || !s) { onEnd(); return; }
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(s.target);
+      u.lang = langByCode(profile.target_language).tts;
+      u.rate = READING_RATE[speed] || 0.95;
+      u.onboundary = (e) => { if (!e.name || e.name === 'word') highlightWordAt(sentenceEl, e.charIndex); };
+      u.onend = () => { clearHighlight(sentenceEl); onEnd(); };
+      u.onerror = () => { clearHighlight(sentenceEl); onEnd(); };
+      window.speechSynthesis.speak(u);
+    }
+
+    function playAll() {
+      isPlaying = true;
+      stopRequested = false;
+      updatePlayButtonLabel();
+      const step = (idx) => {
+        if (stopRequested || idx >= passage.sentences.length) { isPlaying = false; stopRequested = false; updatePlayButtonLabel(); return; }
+        playSentence(idx, () => step(idx + 1));
+      };
+      step(0);
+    }
+
     function renderPassage() {
-      const tts = langByCode(profile.target_language).tts;
       document.getElementById('topLabel').textContent = t('rl.freeReading');
+      const sentencesHTML = passage.sentences.map((s, i) => `
+        ${s.newParagraph && i > 0 ? '<div style="height:14px;"></div>' : ''}
+        <div class="rl-sentence" data-idx="${i}" style="margin-bottom:${translationOn ? '14px' : '4px'};">
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <button class="icon-btn icon-btn-sm rl-sentence-play" data-idx="${i}" style="flex-shrink:0;">🔊</button>
+            <span style="font-size:15.5px;line-height:1.8;">${sentenceToSpansHTML(s.target)}</span>
+          </div>
+          ${translationOn ? `<div class="text-faint" style="font-size:12.5px;margin-left:34px;margin-top:2px;">${escapeHtml(s.native)}</div>` : ''}
+        </div>`).join('');
+
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-body">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <button class="icon-btn icon-btn-sm" id="listenBtn">🔊</button>
-            <h1 style="font-size:19px;font-family:var(--font-display);">${passage.title}</h1>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+            <button class="btn-ghost" id="playAllBtn" style="padding:6px 12px;">▶ ${t('rl.playAll')}</button>
+            <button class="chip${speed === 'normal' ? ' active' : ''}" data-speed="normal" style="padding:4px 10px;font-size:12px;">${t('rl.speedNormal')}</button>
+            <button class="chip${speed === 'slow' ? ' active' : ''}" data-speed="slow" style="padding:4px 10px;font-size:12px;">${t('rl.speedSlow')}</button>
+            <button class="chip${translationOn ? ' active' : ''}" id="translationToggle" style="padding:4px 10px;font-size:12px;margin-left:auto;">${translationOn ? t('rl.hideTranslation') : t('rl.showTranslation')}</button>
           </div>
-          <div class="card" style="margin-top:14px;white-space:pre-wrap;line-height:1.7;font-size:15.5px;">${passage.body}</div>
+          <h1 style="font-size:19px;font-family:var(--font-display);margin-bottom:10px;">${passage.title}</h1>
+          <div class="card">${sentencesHTML}</div>
           ${passage.glossary && passage.glossary.length ? `
             <div class="card" style="margin-top:14px;">
               <span class="label" style="margin-bottom:6px;">${t('rl.glossary')}</span>
@@ -102,8 +200,26 @@
             </div>` : ''}
           <button class="btn-primary" id="doneReadingBtn" style="margin-top:20px;width:100%;justify-content:center;">${t('rl.doneReading')}</button>
         </div>`;
-      document.getElementById('listenBtn').addEventListener('click', () => speak(passage.body, tts));
-      document.getElementById('doneReadingBtn').addEventListener('click', startQuestions);
+
+      updatePlayButtonLabel();
+      document.getElementById('playAllBtn').addEventListener('click', () => { isPlaying ? stopPlayback() : playAll(); });
+      document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => {
+        speed = b.dataset.speed;
+        localStorage.setItem('yakyak_reading_speed', speed);
+        stopPlayback();
+        renderPassage();
+      }));
+      document.getElementById('translationToggle').addEventListener('click', () => {
+        translationOn = !translationOn;
+        localStorage.setItem('yakyak_reading_translation', translationOn ? '1' : '0');
+        stopPlayback();
+        renderPassage();
+      });
+      document.querySelectorAll('.rl-sentence-play').forEach(b => b.addEventListener('click', () => {
+        stopPlayback();
+        playSentence(parseInt(b.dataset.idx, 10), () => {});
+      }));
+      document.getElementById('doneReadingBtn').addEventListener('click', () => { stopPlayback(); startQuestions(); });
     }
 
     function startQuestions() {
@@ -176,7 +292,7 @@
       if (levelUp) document.getElementById('levelUpSlot').innerHTML = celebrationHTML(levelUp);
     }
 
-    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+    document.getElementById('exitBtn').addEventListener('click', () => { stopPlayback(); window.location.href = 'dashboard.html'; });
 
     (async () => {
       user = await requireAuth();
