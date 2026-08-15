@@ -716,13 +716,16 @@ function mascotHTML(size) {
 }
 
 // --- Yak avatars ---------------------------------------------------------
-// A small chosen-identity layer on top of Trail Markers: pick one of 10
-// illustrated character yaks (like Duolingo's owl), and it wears your
-// progress — a tiered corner badge for how far up the CEFR waypoints
-// you've climbed, plus a few small medal chips for other earned badges.
-// The images themselves live in avatars/<file> (transparent PNGs, already
-// cropped to a square canvas), referenced with a plain relative path since
-// this is a static site with no build step / asset hashing.
+// AVATARS is the full illustrated-character catalog (20 yaks). Which one a
+// given user displays is no longer a free pick — see "Yak Evolution" below,
+// which maps cumulative XP to one of 10 of these characters in an unlocked-
+// through-practice progression. yakAvatarHTML() itself just draws whichever
+// avatarId it's handed, plus a tiered corner badge for how far up the CEFR
+// waypoints the user has climbed and a few small medal chips for other
+// earned badges — that layer is independent of which yak is shown. The
+// images live in avatars/<file> (transparent PNGs, already cropped to a
+// square canvas), referenced with a plain relative path since this is a
+// static site with no build step / asset hashing.
 const AVATARS = [
   { id: 'superhero', nameKey: 'av.superhero', file: 'avatars/superhero.png' },
   { id: 'chef', nameKey: 'av.chef', file: 'avatars/chef.png' },
@@ -799,31 +802,47 @@ function yakAvatarHTML(avatarId, size, badgeCodes) {
     </div>`;
 }
 
-// Opens a modal to choose one of the 5 yak avatars. Calls onPick(avatarId)
-// and closes itself; does NOT persist anything — the caller is responsible
-// for saving avatar_id (different pages want to save it slightly
-// differently, e.g. onboarding batches it into the initial profile upsert).
-function openAvatarPicker(currentId, onPick) {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-card">
-      <h2 style="font-size:20px;margin-bottom:4px;">${t('av.pickTitle')}</h2>
-      <p class="text-dim" style="font-size:13.5px;margin-bottom:16px;">${t('av.pickSubtitle')}</p>
-      <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;" id="avatarGrid"></div>
-      <button class="btn-ghost" id="closeAvatarPickerBtn" style="margin-top:18px;width:100%;justify-content:center;">${t('av.cancel')}</button>
-    </div>`;
-  document.body.appendChild(overlay);
-  document.getElementById('avatarGrid').innerHTML = AVATARS.map(a => `
-    <button class="tile${a.id === currentId ? ' active' : ''}" data-a="${a.id}" style="align-items:center;width:88px;">
-      ${yakAvatarHTML(a.id, 56, [])}
-      <span style="font-size:11.5px;font-weight:700;margin-top:4px;">${t(a.nameKey)}</span>
-    </button>`).join('');
-  document.getElementById('avatarGrid').querySelectorAll('[data-a]').forEach(btn => {
-    btn.addEventListener('click', () => { overlay.remove(); onPick(btn.dataset.a); });
-  });
-  document.getElementById('closeAvatarPickerBtn').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+// --- Yak Evolution ---------------------------------------------------
+// Replaces the old free-pick avatar system: nobody chooses their yak
+// anymore, they earn the next one. 10 stages, ordered from an everyday
+// "just getting started" persona up to a mythic one, each unlocked at a
+// cumulative-XP threshold. Thresholds are hand-tuned rather than derived
+// from a formula: early stages come quickly (a few sessions) so new users
+// see the system move right away, then the gap widens so the later stages
+// stay aspirational — Wizard Yak is meant to take real, sustained practice
+// (months, not a weekend), which is the point of using it as a motivator.
+// Titles/taglines/descriptions are flavor copy and intentionally
+// English-only, same as BADGES above — not run through t().
+const YAK_EVOLUTION = [
+  { level: 1, avatarId: 'barista', title: 'Barista Yak', tagline: 'everyday hustle', desc: 'Up at 5am, steaming milk, perfecting latte art. Grounded, warm, and reliably caffeinated.', minXp: 0 },
+  { level: 2, avatarId: 'lifeguard', title: 'Lifeguard Yak', tagline: 'community helper', desc: 'Whistle ready, eyes on the horizon. First to help, last to leave the beach.', minXp: 60 },
+  { level: 3, avatarId: 'painter', title: 'Painter Yak', tagline: 'creative spark', desc: 'Splatters, palettes, and big ideas. Sees color where others see blank walls.', minXp: 150 },
+  { level: 4, avatarId: 'scuba', title: 'Scuba Yak', tagline: 'explorer', desc: 'Down the rabbit hole — or reef. Curious enough to breathe underwater for answers.', minXp: 280 },
+  { level: 5, avatarId: 'gamer', title: 'Gamer Yak', tagline: 'digital warrior', desc: 'RGB-lit focus, clutch reflexes. Boss fights are just Tuesday practice.', minXp: 450 },
+  { level: 6, avatarId: 'biker', title: 'Biker Yak', tagline: 'rebel', desc: "Leather jacket, engine hum. Doesn't follow the road — carves it.", minXp: 700 },
+  { level: 7, avatarId: 'disco', title: 'Disco Yak', tagline: 'showman', desc: 'Mirrorball moment. Enters a room and the room levels up instantly.', minXp: 1000 },
+  { level: 8, avatarId: 'scientist', title: 'Mad Scientist Yak', tagline: 'genius', desc: "Lab coat fizzing, goggles fogged. 99% chaos, 1% breakthrough — that's the formula.", minXp: 1400 },
+  { level: 9, avatarId: 'samurai', title: 'Samurai Yak', tagline: 'legendary warrior', desc: 'Blade still, breath steady. Honor over hype. Legends whisper his name.', minXp: 1900 },
+  { level: 10, avatarId: 'wizard', title: 'Wizard Yak', tagline: 'extraordinary / mythic', desc: 'Staff cracked reality open. No longer climbing — rewriting the ladder itself.', minXp: 2500 },
+];
+
+// Highest stage whose minXp the learner has cleared. YAK_EVOLUTION is
+// already in ascending-level order, so this is just "last one that fits."
+function currentEvolutionStage(xp) {
+  xp = xp || 0;
+  let stage = YAK_EVOLUTION[0];
+  for (const s of YAK_EVOLUTION) {
+    if (xp >= s.minXp) stage = s;
+    else break;
+  }
+  return stage;
+}
+
+// The stage after the current one, or null if already at the top
+// (Wizard Yak, level 10) — used to render "N XP to go" progress UI.
+function nextEvolutionStage(xp) {
+  const current = currentEvolutionStage(xp);
+  return YAK_EVOLUTION.find(s => s.level === current.level + 1) || null;
 }
 
 // Renders the CEFR ladder into a container element.

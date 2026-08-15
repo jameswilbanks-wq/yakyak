@@ -33,14 +33,6 @@
 
     let user = null, profile = null, completionCount = 0, vocabProgress = { learned: 0, target: 1000 }, myBadgeCodes = [];
 
-    function openAvatarPickerFromHeader() {
-      openAvatarPicker(profile.avatar_id, async (id) => {
-        profile.avatar_id = id;
-        await db.from('profiles').update({ avatar_id: id }).eq('id', user.id);
-        document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(profile.avatar_id, 76, myBadgeCodes);
-      });
-    }
-
     function openProgressModal(profile) {
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
@@ -79,7 +71,7 @@
         <div id="cheerBannerSlot"></div>
         <div class="dash-header">
           <div style="display:flex;align-items:center;gap:10px;">
-            <button id="avatarBtn" title="${t('av.pickTitle')}" style="width:76px;height:auto;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;"></button>
+            <button id="avatarBtn" title="${t('ev.viewEvolution')}" style="width:76px;height:auto;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;"></button>
             <div>
               <h1 style="font-size:22px;">${greeting()}, ${profile.name}.</h1>
               <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level}</p>
@@ -98,8 +90,8 @@
 
         <div id="mainSlot"></div>
       `;
-      document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(profile.avatar_id, 76, myBadgeCodes);
-      document.getElementById('avatarBtn').addEventListener('click', openAvatarPickerFromHeader);
+      document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(currentEvolutionStage(profile.xp).avatarId, 76, myBadgeCodes);
+      document.getElementById('avatarBtn').addEventListener('click', () => { window.location.href = 'evolution.html'; });
       document.getElementById('tierBadge').textContent = profile.assessed_level
         ? tierLabel(profile.assessed_level)
         : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });

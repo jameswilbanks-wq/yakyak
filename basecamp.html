@@ -69,6 +69,15 @@
             <p class="text-faint" style="font-size:11.5px;margin-top:2px;margin-bottom:14px;" id="badgeProgress"></p>
             <div id="badgeGrid" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
           </div>
+
+          <a href="evolution.html" class="card" style="margin-top:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);">
+            <div style="font-size:24px;">🐂</div>
+            <div style="flex:1;">
+              <div style="font-weight:800;font-size:14px;">${t('ev.cardTitle')}</div>
+              <div class="text-faint" style="font-size:12px;margin-top:2px;">${t('ev.cardDesc')}</div>
+            </div>
+            <div style="font-size:16px;color:var(--text-faint);">→</div>
+          </a>
         </div>`;
       document.getElementById('mascotSlot2').innerHTML = mascotHTML(34);
       document.getElementById('tabWeek').addEventListener('click', () => { tab = 'week'; render(); });
@@ -76,8 +85,8 @@
 
       document.getElementById('peopleList').innerHTML = sorted.map((p, i) => `
         <div class="card" style="display:flex;align-items:center;gap:12px;padding:14px 16px;">
-          <div style="position:relative;flex-shrink:0;${p.id === user.id ? 'cursor:pointer;' : ''}" ${p.id === user.id ? 'data-myavatar="true"' : ''} title="${p.id === user.id ? t('av.pickTitle') : ''}">
-            ${yakAvatarHTML(p.avatar_id, 44, p.badgeCodes)}
+          <div style="position:relative;flex-shrink:0;${p.id === user.id ? 'cursor:pointer;' : ''}" ${p.id === user.id ? 'data-myavatar="true"' : ''} title="${p.id === user.id ? t('ev.viewEvolution') : ''}">
+            ${yakAvatarHTML(currentEvolutionStage(p.allTimeXp).avatarId, 44, p.badgeCodes)}
             <span style="position:absolute;top:-4px;left:-4px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;border-radius:999px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;">${i + 1}</span>
           </div>
           <div style="flex:1;min-width:0;">
@@ -100,15 +109,7 @@
       }));
 
       const myAvatarSlot = document.querySelector('[data-myavatar]');
-      if (myAvatarSlot) myAvatarSlot.addEventListener('click', () => {
-        openAvatarPicker(profile.avatar_id, async (id) => {
-          profile.avatar_id = id;
-          await db.from('profiles').update({ avatar_id: id }).eq('id', user.id);
-          const me = people.find(p => p.id === user.id);
-          if (me) me.avatar_id = id;
-          render();
-        });
-      });
+      if (myAvatarSlot) myAvatarSlot.addEventListener('click', () => { window.location.href = 'evolution.html'; });
 
       const me = people.find(p => p.id === user.id) || { badgeCodes: [] };
       const earnedCodes = new Set(me.badgeCodes);
@@ -139,7 +140,7 @@
       const weekStartIso = weekStart.toISOString();
 
       const [{ data: profiles }, { data: badgeRows }, { data: xpRows }, { data: unseenCheers }] = await Promise.all([
-        db.from('profiles').select('id, name, target_language, current_level, xp, streak, avatar_id'),
+        db.from('profiles').select('id, name, target_language, current_level, xp, streak'),
         db.from('user_badges').select('user_id, badge_code'),
         db.from('xp_events').select('user_id, xp_earned').gte('created_at', weekStartIso),
         db.from('cheers').select('id, from_user_id').eq('to_user_id', user.id).eq('seen', false),
@@ -154,7 +155,7 @@
         id: p.id, name: p.name || t('bc.someone'), target_language: p.target_language,
         current_level: p.current_level, streak: p.streak || 0, allTimeXp: p.xp || 0,
         weekXp: weekTotals[p.id] || 0, badgeCodes: badgesByUser[p.id] || [],
-        badgeCount: (badgesByUser[p.id] || []).length, avatar_id: p.avatar_id || 'cocoa',
+        badgeCount: (badgesByUser[p.id] || []).length,
       }));
 
       render();
