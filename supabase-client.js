@@ -673,6 +673,16 @@ const AVATARS = [
   { id: 'yogi', nameKey: 'av.yogi', file: 'avatars/yogi.png' },
   { id: 'dj', nameKey: 'av.dj', file: 'avatars/dj.png' },
   { id: 'pirate', nameKey: 'av.pirate', file: 'avatars/pirate.png' },
+  { id: 'barista', nameKey: 'av.barista', file: 'avatars/barista.png' },
+  { id: 'biker', nameKey: 'av.biker', file: 'avatars/biker.png' },
+  { id: 'disco', nameKey: 'av.disco', file: 'avatars/disco.png' },
+  { id: 'gamer', nameKey: 'av.gamer', file: 'avatars/gamer.png' },
+  { id: 'lifeguard', nameKey: 'av.lifeguard', file: 'avatars/lifeguard.png' },
+  { id: 'painter', nameKey: 'av.painter', file: 'avatars/painter.png' },
+  { id: 'samurai', nameKey: 'av.samurai', file: 'avatars/samurai.png' },
+  { id: 'scientist', nameKey: 'av.scientist', file: 'avatars/scientist.png' },
+  { id: 'scuba', nameKey: 'av.scuba', file: 'avatars/scuba.png' },
+  { id: 'wizard', nameKey: 'av.wizard', file: 'avatars/wizard.png' },
 ];
 
 const WAYPOINT_ORDER = ['waypoint_pre_a1', 'waypoint_a1', 'waypoint_a2', 'waypoint_b1', 'waypoint_b2', 'waypoint_c1', 'waypoint_c2'];
