@@ -308,15 +308,21 @@
         result = { score: null, isGood: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.', missedWords: [] };
       }
 
+      const missedWords = Array.isArray(result.missedWords) ? result.missedWords : [];
       sentenceResults[sIdx] = {
         pronScore: result.score,
         pronFeedback: result.feedback,
         heard: transcript,
         audioURL,
-        missedWords: Array.isArray(result.missedWords) ? result.missedWords : [],
+        missedWords,
         wordPractice: {},
       };
       renderPronFeedback();
+
+      // Best-effort, fire-and-forget: so these mispronounced words land in
+      // Huddle Up instead of vanishing once this session ends (see
+      // recordPronunciationMistakes in supabase-client.js).
+      if (missedWords.length) recordPronunciationMistakes(user.id, profile.target_language, missedWords, targetSentence);
     }
 
     // Grades a single retried word (targetSentence with one word makes the

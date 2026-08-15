@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YakYak — Review</title>
+<title>YakYak — Huddle Up</title>
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -25,9 +25,18 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
-    let user = null, profile = null, queue = [], idx = 0, reviewedCount = 0, correctCount = 0, revealed = false;
+    let user = null, profile = null, queue = [], idx = 0, reviewedCount = 0, correctCount = 0, gradCount = 0;
+
+    // Mic-recording state, copied verbatim from input.html's "Generalized
+    // recording controls" — used here for the pronunciation-drill cards.
+    let recognition = null, isRecording = false;
+    let mediaRecorder = null, mediaStream = null, audioChunks = [], liveTranscript = '';
+    let activeMicBtn = null, activeHint = null, activeTargetText = null, activeOnGraded = null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micSupported = !!SR;
 
     function renderLoading() {
+      document.getElementById('topLabel').textContent = '';
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
           <div id="mascotSlot" style="width:52px;"></div>
@@ -53,74 +62,330 @@
       document.getElementById('goTalk').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
     }
 
+    // Pulls every open mistake — vocab/grammar misses from skill_mastery
+    // (incorrect_count > 0, not yet cleared) plus mispronounced words from
+    // pronunciation_mistakes — merges them into one due-first queue, capped
+    // so a session never feels endless.
     async function loadQueue() {
       renderLoading();
       const nowIso = new Date().toISOString();
-      const { data: due } = await db.from('skill_mastery')
-        .select('*')
-        .eq('user_id', user.id)
-        .lte('next_review_at', nowIso)
-        .order('next_review_at', { ascending: true })
-        .limit(10);
 
-      queue = [];
-      for (const row of due || []) {
+      const [{ data: mistakes }, { data: pronRows }] = await Promise.all([
+        db.from('skill_mastery').select('*')
+          .eq('user_id', user.id)
+          .eq('mistake_cleared', false)
+          .gt('incorrect_count', 0)
+          .lte('next_review_at', nowIso)
+          .order('next_review_at', { ascending: true })
+          .limit(12),
+        db.from('pronunciation_mistakes').select('*')
+          .eq('user_id', user.id)
+          .eq('target_language', profile.target_language)
+          .eq('cleared', false)
+          .lte('next_review_at', nowIso)
+          .order('next_review_at', { ascending: true })
+          .limit(12),
+      ]);
+
+      const built = [];
+      for (const row of mistakes || []) {
         if (row.skill_type === 'grammar') {
           const { data: gp } = await db.from('grammar_points').select('*').eq('id', row.skill_ref_id).single();
-          if (gp) queue.push({ skillType: 'grammar', skillRefId: row.skill_ref_id, front: gp.label, back: gp.description, sub: t('rv.grammar') });
+          if (gp) built.push({
+            kind: 'grammar', skillRefId: row.skill_ref_id, front: gp.label, back: gp.description,
+            passed: row.mistake_reviews_passed || 0, nextReviewAt: row.next_review_at,
+          });
         } else {
           const { data: vi } = await db.from('vocab_items').select('*').eq('id', row.skill_ref_id).single();
-          if (vi) queue.push({ skillType: 'vocab', skillRefId: row.skill_ref_id, front: vi.target_text, back: vi.native_text, sub: t('rv.vocab') });
+          if (vi) built.push({
+            kind: 'vocab', skillRefId: row.skill_ref_id, vocabItem: vi, front: vi.target_text, back: vi.native_text,
+            passed: row.mistake_reviews_passed || 0, nextReviewAt: row.next_review_at,
+          });
         }
       }
+      for (const row of pronRows || []) {
+        built.push({
+          kind: 'pronunciation', id: row.id, word: row.word, sentenceContext: row.sentence_context,
+          passed: row.correct_streak || 0, nextReviewAt: row.next_review_at,
+        });
+      }
 
-      idx = 0; reviewedCount = 0; correctCount = 0;
+      built.sort((a, b) => new Date(a.nextReviewAt) - new Date(b.nextReviewAt));
+      queue = built.slice(0, 12);
+
+      idx = 0; reviewedCount = 0; correctCount = 0; gradCount = 0;
       if (!queue.length) renderEmpty(); else renderCard();
     }
 
+    function kindLabel(kind) {
+      if (kind === 'grammar') return t('rv.grammar');
+      if (kind === 'pronunciation') return t('rv.pronunciation');
+      return t('rv.vocab');
+    }
+
     function renderCard() {
-      revealed = false;
       const item = queue[idx];
       document.getElementById('topLabel').textContent = t('rv.ofTotal', { i: idx + 1, n: queue.length });
+      if (item.kind === 'pronunciation') renderPronunciationCard(item);
+      else renderFlashcard(item);
+    }
+
+    function progressChip(item) {
+      return `<span class="chip-mini" style="background:var(--card-2);color:var(--text-faint);">${t('rv.passProgress', { n: item.passed })}</span>`;
+    }
+
+    // --- Vocab / grammar flashcard flow ------------------------------
+
+    function renderFlashcard(item) {
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-body">
-          <span class="chip-mini">${item.sub}</span>
-          <div class="card" style="margin-top:14px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:10px;">
-            <p style="font-size:19px;font-weight:800;font-family:var(--font-display);">${item.front}</p>
-            <p class="text-dim" id="backText" style="font-size:14px;display:none;">${item.back}</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span class="chip-mini">${kindLabel(item.kind)}</span>
+            ${progressChip(item)}
+          </div>
+          <div class="card" style="margin-top:10px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:10px;">
+            <p style="font-size:19px;font-weight:800;font-family:var(--font-display);">${escapeHtml(item.front)}</p>
+            <div id="backSlot" style="display:none;width:100%;"></div>
           </div>
           <div id="actionSlot" style="margin-top:20px;"></div>
         </div>`;
-      renderRevealAction();
+      renderRevealAction(item);
     }
 
-    function renderRevealAction() {
+    function renderRevealAction(item) {
       document.getElementById('actionSlot').innerHTML = `
         <button class="btn-primary" id="revealBtn" style="width:100%;justify-content:center;">${t('rv.reveal')}</button>`;
-      document.getElementById('revealBtn').addEventListener('click', () => {
-        revealed = true;
-        document.getElementById('backText').style.display = 'block';
-        renderGradeActions();
+      document.getElementById('revealBtn').addEventListener('click', async () => {
+        await renderBack(item);
+        renderGradeActions(item);
       });
     }
 
-    function renderGradeActions() {
+    // For vocab, also lazily fetches (and caches onto the row) a fresh
+    // example sentence — this is the "deeper explanation" James asked for,
+    // not just the flip-card translation the old Progress tab had.
+    async function renderBack(item) {
+      const slot = document.getElementById('backSlot');
+      slot.style.display = 'block';
+      if (item.kind === 'grammar') {
+        slot.innerHTML = `<p class="text-dim" style="font-size:13px;line-height:1.5;">${escapeHtml(item.back)}</p>`;
+        return;
+      }
+      slot.innerHTML = `<p class="text-dim" style="font-size:14px;">${escapeHtml(item.back)}</p>`;
+      try {
+        const learning = langByCode(profile.target_language);
+        const ex = await getOrCreateVocabExample(item.vocabItem, learning.name, profile.native_language);
+        if (ex && ex.exampleTarget) {
+          slot.innerHTML = `
+            <p class="text-dim" style="font-size:14px;">${escapeHtml(item.back)}</p>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+              <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+                <p style="font-size:13.5px;font-weight:600;">${escapeHtml(ex.exampleTarget)}</p>
+                <button class="icon-btn icon-btn-sm" id="exAudioBtn">🔊</button>
+              </div>
+              ${ex.exampleNative ? `<p class="text-faint" style="font-size:12px;margin-top:4px;">${escapeHtml(ex.exampleNative)}</p>` : ''}
+            </div>`;
+          document.getElementById('exAudioBtn').addEventListener('click', () => speak(ex.exampleTarget, learning.tts));
+        }
+      } catch (e) { /* keep the plain translation shown above */ }
+    }
+
+    function renderGradeActions(item) {
       document.getElementById('actionSlot').innerHTML = `
         <div style="display:flex;gap:10px;">
           <button class="row-option" id="missedBtn" style="border-color:var(--danger);justify-content:center;"><span style="font-weight:700;color:var(--danger);">${t('rv.missedIt')}</span></button>
           <button class="row-option" id="gotBtn" style="border-color:var(--mint);justify-content:center;"><span style="font-weight:700;color:var(--mint);">${t('rv.gotIt')}</span></button>
         </div>`;
-      document.getElementById('gotBtn').addEventListener('click', () => grade(true));
-      document.getElementById('missedBtn').addEventListener('click', () => grade(false));
+      document.getElementById('gotBtn').addEventListener('click', () => gradeFlashcard(item, true));
+      document.getElementById('missedBtn').addEventListener('click', () => gradeFlashcard(item, false));
     }
 
-    async function grade(correct) {
-      const item = queue[idx];
-      await recordSkillResult(user.id, item.skillType, item.skillRefId, correct);
+    async function gradeFlashcard(item, correct) {
+      const skillType = item.kind === 'grammar' ? 'grammar' : 'vocab';
+      const { cleared } = await recordMistakeReviewResult(user.id, skillType, item.skillRefId, correct);
       reviewedCount++;
       if (correct) correctCount++;
-      if (idx + 1 < queue.length) { idx++; renderCard(); }
-      else finish();
+      if (cleared) gradCount++;
+      advance(cleared);
+    }
+
+    // --- Pronunciation drill flow -------------------------------------
+
+    function renderPronunciationCard(item) {
+      document.getElementById('reviewBody').innerHTML = `
+        <div class="lesson-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span class="chip-mini">${kindLabel(item.kind)}</span>
+            ${progressChip(item)}
+          </div>
+          <div class="card" style="margin-top:10px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:8px;">
+            <p style="font-size:23px;font-weight:800;font-family:var(--font-display);">${escapeHtml(item.word)}</p>
+            ${item.sentenceContext ? `<p class="text-faint" style="font-size:12.5px;font-style:italic;">${escapeHtml(item.sentenceContext)}</p>` : ''}
+          </div>
+          <div style="margin-top:28px;text-align:center;" id="pronMicArea">
+            ${micSupported ? `
+              <button class="mic-btn" id="pronMicBtn">🎙️</button>
+              <p class="text-faint" style="font-size:12px;margin-top:10px;" id="pronMicHint">${t('rv.sayAloud')}</p>
+            ` : ''}
+          </div>
+          ${!micSupported ? `
+            <div style="display:flex;gap:10px;margin-top:20px;">
+              <button class="row-option" id="missedBtn" style="border-color:var(--danger);justify-content:center;"><span style="font-weight:700;color:var(--danger);">${t('rv.missedIt')}</span></button>
+              <button class="row-option" id="gotBtn" style="border-color:var(--mint);justify-content:center;"><span style="font-weight:700;color:var(--mint);">${t('rv.gotIt')}</span></button>
+            </div>` : ''}
+        </div>`;
+
+      if (micSupported) {
+        document.getElementById('pronMicBtn').addEventListener('click', () => {
+          const micBtn = document.getElementById('pronMicBtn');
+          const hint = document.getElementById('pronMicHint');
+          toggleRecording(micBtn, hint, item.word, (transcript, audioURL) => gradePronDrill(item, transcript));
+        });
+      } else {
+        document.getElementById('gotBtn').addEventListener('click', () => gradePronunciationCard(item, true));
+        document.getElementById('missedBtn').addEventListener('click', () => gradePronunciationCard(item, false));
+      }
+    }
+
+    async function gradePronDrill(item, transcript) {
+      document.getElementById('pronMicArea').innerHTML = `
+        <div class="lesson-center" style="padding:6px 0;">
+          <div id="mascotSlot" style="width:32px;"></div>
+          <p class="text-dim" style="margin-top:8px;font-size:13px;">${t('in.gradingReading')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(32);
+
+      let correct = false;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GRADE_PRONUNCIATION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetSentence: item.word,
+            transcript,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+          }),
+        });
+        const data = JSON.parse(await res.text());
+        if (res.ok && !data.error) correct = !!data.isGood;
+      } catch (e) { /* fall through as a miss — they can try again next time it's due */ }
+
+      await gradePronunciationCard(item, correct);
+    }
+
+    async function gradePronunciationCard(item, correct) {
+      const { cleared } = await gradePronunciationMistake(item.id, correct);
+      reviewedCount++;
+      if (correct) correctCount++;
+      if (cleared) gradCount++;
+      advance(cleared);
+    }
+
+    // Generalized recording controls, copied verbatim from input.html.
+    async function toggleRecording(micBtn, hint, targetText, onGraded) {
+      if (isRecording) { stopRecording(); return; }
+      await startRecording(micBtn, hint, targetText, onGraded);
+    }
+
+    async function startRecording(micBtn, hint, targetText, onGraded) {
+      const tts = langByCode(profile.target_language).tts;
+      audioChunks = [];
+      liveTranscript = '';
+      activeMicBtn = micBtn;
+      activeHint = hint;
+      activeTargetText = targetText;
+      activeOnGraded = onGraded;
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        hint.textContent = t('in.micPermissionError');
+        return;
+      }
+
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.start();
+
+      recognition = new SR();
+      recognition.lang = tts;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (e) => {
+        let tr = '';
+        for (let i = 0; i < e.results.length; i++) tr += e.results[i][0].transcript;
+        liveTranscript = tr;
+      };
+      recognition.onerror = () => {};
+      recognition.start();
+
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.textContent = '⏹️';
+      hint.textContent = t('in.recordingTapStop');
+    }
+
+    function stopRecording() {
+      const micBtn = activeMicBtn;
+      const hint = activeHint;
+      const onGraded = activeOnGraded;
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micBtn.textContent = '🎙️';
+      micBtn.disabled = true;
+      hint.textContent = t('in.processing');
+
+      let recognitionDone = false, recorderDone = false, audioURL = null;
+      const maybeFinish = () => {
+        if (recognitionDone && recorderDone) onGraded(liveTranscript, audioURL);
+      };
+
+      if (recognition) {
+        recognition.onend = () => { recognitionDone = true; maybeFinish(); };
+        try { recognition.stop(); } catch (e) { recognitionDone = true; maybeFinish(); }
+      } else {
+        recognitionDone = true;
+      }
+
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          audioURL = URL.createObjectURL(blob);
+          if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+          recorderDone = true;
+          maybeFinish();
+        };
+        try { mediaRecorder.stop(); } catch (e) { recorderDone = true; maybeFinish(); }
+      } else {
+        recorderDone = true;
+      }
+    }
+
+    // --- Shared advance/finish -----------------------------------------
+
+    function advance(justCleared) {
+      if (idx + 1 < queue.length) {
+        idx++;
+        if (justCleared) { renderMastered(() => renderCard()); } else { renderCard(); }
+      } else {
+        if (justCleared) { renderMastered(() => finish()); } else { finish(); }
+      }
+    }
+
+    // A short "mastered!" beat when an item hits 3/3 and drops out of the
+    // queue for good — this is the payoff James wanted from "gone over
+    // three times... set into memory."
+    function renderMastered(next) {
+      document.getElementById('reviewBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="font-size:36px;">✅</div>
+          <h2 style="font-size:19px;margin:12px 0 4px;">${t('rv.mastered')}</h2>
+          <p class="text-dim" style="font-size:13px;">${t('rv.masteredSub')}</p>
+        </div>`;
+      setTimeout(next, 1100);
     }
 
     async function finish() {
@@ -131,16 +396,14 @@
           <div style="font-size:40px;">🏆</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rv.reviewDone')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rv.rememberedOfTotal', { c: correctCount, t: reviewedCount, xp: xpEarned })}</p>
+          ${gradCount ? `<p class="text-dim" style="font-size:13px;margin-top:4px;">${t('rv.gradCount', { n: gradCount })}</p>` : ''}
+          <div id="levelUpSlot" style="width:100%;"></div>
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rv.backToHome')}</button>
         </div>`;
 
-      const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const newStreak = profile.last_activity_date === today ? profile.streak
-        : profile.last_activity_date === yesterday ? profile.streak + 1 : 1;
-      await db.from('profiles').update({
-        xp: profile.xp + xpEarned, streak: newStreak, last_activity_date: today,
-      }).eq('id', user.id);
+      await updateStreakAndActivity(user, profile, xpEarned, 'huddle');
+      const newBadges = await checkAndAwardBadges(user, profile);
+      document.getElementById('levelUpSlot').innerHTML = badgesEarnedHTML(newBadges);
 
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
     }

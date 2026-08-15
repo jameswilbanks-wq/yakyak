@@ -16,6 +16,7 @@ const GENERATE_PLAN_URL = SUPABASE_URL + "/functions/v1/generate-lesson-plan";
 const GENERATE_EXTENSIVE_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-extensive-passage";
 const LEVEL_TEST_COACH_URL = SUPABASE_URL + "/functions/v1/level-test-coach";
 const GENERATE_COACH_CHECKIN_URL = SUPABASE_URL + "/functions/v1/generate-coach-checkin";
+const GENERATE_VOCAB_EXAMPLE_URL = SUPABASE_URL + "/functions/v1/generate-vocab-example";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -690,7 +691,13 @@ async function getProfile(userId) {
 // Records a right/wrong result against a user's mastery of one vocab or
 // grammar item and reschedules its next review. Any module that produces a
 // graded answer (translate, roleplay, drills) should call this — it's the
-// shared signal that feeds the spaced-repetition queue (module 4).
+// shared signal that feeds the spaced-repetition queue (Huddle Up).
+//
+// A fresh miss (correct=false) also resets mistake_cleared/
+// mistake_reviews_passed — see the Huddle Up section below — so a word or
+// grammar point that was already "graduated" out of the mistake queue but
+// gets missed again anywhere in the app (not just in Huddle Up itself)
+// comes back into rotation rather than staying invisible forever.
 async function recordSkillResult(userId, skillType, skillRefId, correct) {
   if (!skillRefId) return;
   const { data: existing } = await db.from('skill_mastery').select('*')
@@ -700,23 +707,140 @@ async function recordSkillResult(userId, skillType, skillRefId, correct) {
   let correctCount = existing ? existing.correct_count : 0;
   let incorrectCount = existing ? existing.incorrect_count : 0;
 
+  const row = {
+    user_id: userId,
+    skill_type: skillType,
+    skill_ref_id: skillRefId,
+  };
+
   if (correct) { correctCount++; strength = Math.min(5, strength + 1); }
-  else { incorrectCount++; strength = Math.max(0, strength - 1); }
+  else {
+    incorrectCount++; strength = Math.max(0, strength - 1);
+    row.mistake_cleared = false;
+    row.mistake_reviews_passed = 0;
+  }
 
   // Simple SM-2-style interval ladder keyed off strength (0-5).
   const intervalDays = [0.5, 1, 2, 4, 7, 14][strength];
   const now = new Date();
   const nextReview = new Date(now.getTime() + intervalDays * 86400000);
 
-  await db.from('skill_mastery').upsert({
-    user_id: userId,
-    skill_type: skillType,
-    skill_ref_id: skillRefId,
-    strength, correct_count: correctCount, incorrect_count: incorrectCount,
-    last_seen_at: now.toISOString(),
+  row.strength = strength;
+  row.correct_count = correctCount;
+  row.incorrect_count = incorrectCount;
+  row.last_seen_at = now.toISOString();
+  row.next_review_at = nextReview.toISOString();
+  row.updated_at = now.toISOString();
+
+  await db.from('skill_mastery').upsert(row, { onConflict: 'user_id,skill_type,skill_ref_id' });
+}
+
+// --- Huddle Up: mistake review ------------------------------------------
+// Huddle Up (review.html) is deliberately scoped to actual mistakes only —
+// it queries skill_mastery/pronunciation_mistakes rows that have been
+// missed at least once, not everything ever encountered. An item graduates
+// (mistake_cleared / cleared = true, drops out of the queue for good) once
+// it's been answered correctly here 3 TIMES IN A ROW — any miss along the
+// way resets the streak to 0, so a lucky guess elsewhere doesn't cheapen
+// real mastery.
+const MISTAKE_REVIEWS_TO_GRADUATE = 3;
+
+// The grading path used ONLY inside Huddle Up itself — wraps
+// recordSkillResult (still handles the general strength/interval ladder)
+// and additionally advances the graduation counter. Getting a word right
+// via a multiple-choice guess elsewhere does NOT move this counter; only a
+// deliberate recall-under-test pass here does.
+// Returns { passed, cleared } so the caller (Huddle Up's card UI) can show
+// a "mastered!" moment right when an item graduates out of the queue.
+async function recordMistakeReviewResult(userId, skillType, skillRefId, correct) {
+  await recordSkillResult(userId, skillType, skillRefId, correct);
+  if (!correct) return { passed: 0, cleared: false }; // recordSkillResult already zeroed + reopened it
+  const { data: existing } = await db.from('skill_mastery').select('mistake_reviews_passed')
+    .eq('user_id', userId).eq('skill_type', skillType).eq('skill_ref_id', skillRefId).maybeSingle();
+  const passed = (existing ? existing.mistake_reviews_passed : 0) + 1;
+  const cleared = passed >= MISTAKE_REVIEWS_TO_GRADUATE;
+  await db.from('skill_mastery').update({
+    mistake_reviews_passed: passed,
+    mistake_cleared: cleared,
+  }).eq('user_id', userId).eq('skill_type', skillType).eq('skill_ref_id', skillRefId);
+  return { passed, cleared };
+}
+
+// Called after grade-pronunciation flags mispronounced words (input.html),
+// so they land in Huddle Up instead of vanishing once the session ends.
+// One row per (user, language, word) — matched case-insensitively since
+// pronunciation_mistakes has no FK to a curated word list, just whatever
+// exact substrings grade-pronunciation flagged. A fresh miss on a word
+// already in rotation resets its streak, same reasoning as
+// recordSkillResult above. Best-effort; must not block the module finishing.
+async function recordPronunciationMistakes(userId, targetLanguage, missedWords, sentenceContext) {
+  if (!missedWords || !missedWords.length) return;
+  const now = new Date().toISOString();
+  for (const word of missedWords) {
+    try {
+      const { data: existing } = await db.from('pronunciation_mistakes').select('id')
+        .eq('user_id', userId).eq('target_language', targetLanguage).ilike('word', word).maybeSingle();
+      if (existing) {
+        await db.from('pronunciation_mistakes').update({
+          sentence_context: sentenceContext || null, correct_streak: 0, cleared: false,
+          next_review_at: now, last_seen_at: now,
+        }).eq('id', existing.id);
+      } else {
+        await db.from('pronunciation_mistakes').insert({
+          user_id: userId, target_language: targetLanguage, word,
+          sentence_context: sentenceContext || null, next_review_at: now, last_seen_at: now,
+        });
+      }
+    } catch (e) { /* best-effort per word */ }
+  }
+}
+
+// Grades a Huddle Up pronunciation-drill card. Uses its own short interval
+// ladder (1/3/7 days as the streak builds) rather than skill_mastery's,
+// since this is a separate table with its own simpler shape.
+async function gradePronunciationMistake(id, correct) {
+  const { data: existing } = await db.from('pronunciation_mistakes').select('correct_streak').eq('id', id).maybeSingle();
+  const streak = correct ? (existing ? existing.correct_streak : 0) + 1 : 0;
+  const cleared = streak >= MISTAKE_REVIEWS_TO_GRADUATE;
+  const now = new Date();
+  const intervalDays = correct ? [1, 3, 7][Math.min(streak - 1, 2)] : 0.5;
+  const nextReview = new Date(now.getTime() + intervalDays * 86400000);
+  await db.from('pronunciation_mistakes').update({
+    correct_streak: streak,
+    cleared,
     next_review_at: nextReview.toISOString(),
-    updated_at: now.toISOString(),
-  }, { onConflict: 'user_id,skill_type,skill_ref_id' });
+    last_seen_at: now.toISOString(),
+  }).eq('id', id);
+  return { streak, cleared };
+}
+
+// Lazily fetches + caches an example sentence for a vocab_items row that
+// doesn't have one yet (older rows, or ones never shown via vocab.html's
+// batch flow). Persists onto the row itself so it's a one-time generation
+// cost per word, not regenerated every time it comes up in Huddle Up.
+async function getOrCreateVocabExample(vocabItem, targetLanguage, nativeLanguage) {
+  if (vocabItem.example_target) {
+    return { exampleTarget: vocabItem.example_target, exampleNative: vocabItem.example_native };
+  }
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(GENERATE_VOCAB_EXAMPLE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        targetText: vocabItem.target_text, nativeText: vocabItem.native_text,
+        targetLanguage, nativeLanguage, level: vocabItem.level,
+      }),
+    });
+    const data = JSON.parse(await res.text());
+    if (res.ok && !data.error && data.exampleTarget) {
+      await db.from('vocab_items').update({
+        example_target: data.exampleTarget, example_native: data.exampleNative || null,
+      }).eq('id', vocabItem.id);
+      return { exampleTarget: data.exampleTarget, exampleNative: data.exampleNative || null };
+    }
+  } catch (e) { /* best-effort — card still works without an example */ }
+  return { exampleTarget: null, exampleNative: null };
 }
 
 // Shared by lesson.html's dialogue quiz, translate.html, and input.html's
