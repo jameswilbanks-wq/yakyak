@@ -655,18 +655,24 @@ function mascotHTML(size) {
 }
 
 // --- Yak avatars ---------------------------------------------------------
-// A small chosen-identity layer on top of Trail Markers: pick one of 5
-// colored yaks (like Duolingo's owl), and it wears your progress — a
-// tiered crown for how far up the CEFR waypoints you've climbed, plus a
-// few small medal chips for other earned badges. Palette-only variants of
-// one drawing (not 5 separate illustrations) so they stay visually
-// consistent and cheap to render anywhere (dashboard header, Basecamp).
+// A small chosen-identity layer on top of Trail Markers: pick one of 10
+// illustrated character yaks (like Duolingo's owl), and it wears your
+// progress — a tiered corner badge for how far up the CEFR waypoints
+// you've climbed, plus a few small medal chips for other earned badges.
+// The images themselves live in avatars/<file> (transparent PNGs, already
+// cropped to a square canvas), referenced with a plain relative path since
+// this is a static site with no build step / asset hashing.
 const AVATARS = [
-  { id: 'cocoa', nameKey: 'av.cocoa', body: '#B0784A', fringe: '#8B5A2B', horn: '#EDE0C0', snout: '#E8C9A0', dark: '#3A1F0E' },
-  { id: 'frost', nameKey: 'av.frost', body: '#F3EDE3', fringe: '#E0D4BC', horn: '#D8CBA8', snout: '#FFF8EF', dark: '#3A1F0E' },
-  { id: 'shadow', nameKey: 'av.shadow', body: '#4A4038', fringe: '#2E2620', horn: '#C9BCA0', snout: '#6B5A45', dark: '#241A10' },
-  { id: 'rusty', nameKey: 'av.rusty', body: '#A8482E', fringe: '#7A2F1C', horn: '#EDE0C0', snout: '#D9855E', dark: '#2E160A' },
-  { id: 'summitGold', nameKey: 'av.summitGold', body: '#D9A93F', fringe: '#B8862A', horn: '#F5EBC9', snout: '#F0C97A', dark: '#3A2508' },
+  { id: 'superhero', nameKey: 'av.superhero', file: 'avatars/superhero.png' },
+  { id: 'chef', nameKey: 'av.chef', file: 'avatars/chef.png' },
+  { id: 'skier', nameKey: 'av.skier', file: 'avatars/skier.png' },
+  { id: 'punk', nameKey: 'av.punk', file: 'avatars/punk.png' },
+  { id: 'astronaut', nameKey: 'av.astronaut', file: 'avatars/astronaut.png' },
+  { id: 'cowboy', nameKey: 'av.cowboy', file: 'avatars/cowboy.png' },
+  { id: 'detective', nameKey: 'av.detective', file: 'avatars/detective.png' },
+  { id: 'yogi', nameKey: 'av.yogi', file: 'avatars/yogi.png' },
+  { id: 'dj', nameKey: 'av.dj', file: 'avatars/dj.png' },
+  { id: 'pirate', nameKey: 'av.pirate', file: 'avatars/pirate.png' },
 ];
 
 const WAYPOINT_ORDER = ['waypoint_pre_a1', 'waypoint_a1', 'waypoint_a2', 'waypoint_b1', 'waypoint_b2', 'waypoint_c1', 'waypoint_c2'];
@@ -676,12 +682,14 @@ const CROWN_TIERS = {
   gold: { fill: '#FFD75E', stroke: '#C9A227' },
 };
 
-// Renders a yak avatar as inline HTML (SVG bust + a small row of medal
-// emoji beneath it). badgeCodes is the full list of a user's earned
-// user_badges.badge_code values — the crown tier comes from the highest
-// CEFR waypoint among them, and up to 3 non-waypoint badges show as medals
-// (with a "+N" overflow chip) so the avatar stays readable even once
-// someone has earned a lot of Trail Markers.
+// Renders a yak avatar as inline HTML: a circular photo with a gentle idle
+// bob/sway animation (CSS, see .yak-avatar-idle in styles.css — the images
+// are static illustrations, this is what gives them "slight movement"),
+// a small corner badge for CEFR waypoint tier (since each illustration's
+// composition is too different to place a crown "on the head" reliably
+// the way the old SVG design could), and a row of medal emoji beneath for
+// up to 3 other earned badges (with a "+N" overflow chip). badgeCodes is
+// the user's full list of earned user_badges.badge_code values.
 function yakAvatarHTML(avatarId, size, badgeCodes) {
   const a = AVATARS.find(x => x.id === avatarId) || AVATARS[0];
   badgeCodes = badgeCodes || [];
@@ -697,29 +705,23 @@ function yakAvatarHTML(avatarId, size, badgeCodes) {
   const medalIcons = medalCodes.slice(0, 3).map(code => (BADGES.find(b => b.code === code) || {}).icon).filter(Boolean);
   const extra = medalCodes.length - medalIcons.length;
 
-  const crownSVG = crownTier ? `
-    <path d="M32,20 L38,4 L47,16 L60,0 L73,16 L82,4 L88,20 Z" fill="${CROWN_TIERS[crownTier].fill}" stroke="${CROWN_TIERS[crownTier].stroke}" stroke-width="2" stroke-linejoin="round"/>
-    <circle cx="60" cy="8" r="3" fill="${CROWN_TIERS[crownTier].fill}" stroke="${CROWN_TIERS[crownTier].stroke}" stroke-width="1.5"/>` : '';
+  const crownBadge = crownTier ? `
+    <span style="position:absolute;top:-3px;right:-3px;width:${Math.round(size * 0.42)}px;height:${Math.round(size * 0.42)}px;border-radius:999px;background:${CROWN_TIERS[crownTier].fill};border:2px solid ${CROWN_TIERS[crownTier].stroke};display:flex;align-items:center;justify-content:center;font-size:${Math.max(9, Math.round(size * 0.24))}px;line-height:1;">👑</span>` : '';
+
+  // Small per-instance randomized negative delay so multiple avatars on
+  // the same screen (e.g. a Basecamp leaderboard) don't bob in lockstep.
+  const delay = (-(Math.random() * 3)).toFixed(2);
 
   return `
     <div style="display:inline-flex;flex-direction:column;align-items:center;">
-      <svg viewBox="0 0 120 130" width="${size}" height="${Math.round(size * 130 / 120)}">
-        <path d="M28,42 Q12,20 24,6 Q36,16 34,36 Z" fill="${a.horn}"/>
-        <path d="M92,42 Q108,20 96,6 Q84,16 86,36 Z" fill="${a.horn}"/>
-        <path d="M22,50 Q16,26 32,20 Q42,30 52,20 Q60,28 68,20 Q78,30 88,20 Q104,26 98,50 Z" fill="${a.fringe}"/>
-        <ellipse cx="60" cy="76" rx="44" ry="40" fill="${a.body}"/>
-        <ellipse cx="60" cy="98" rx="22" ry="16" fill="${a.snout}"/>
-        <ellipse cx="53" cy="96" rx="2.5" ry="3.5" fill="${a.dark}"/>
-        <ellipse cx="67" cy="96" rx="2.5" ry="3.5" fill="${a.dark}"/>
-        <circle cx="44" cy="68" r="6.5" fill="${a.dark}"/>
-        <circle cx="76" cy="68" r="6.5" fill="${a.dark}"/>
-        <circle cx="46.5" cy="65.5" r="2" fill="#fff"/>
-        <circle cx="78.5" cy="65.5" r="2" fill="#fff"/>
-        <path d="M50,110 Q60,116 70,110" stroke="${a.dark}" stroke-width="3" fill="none" stroke-linecap="round"/>
-        ${crownSVG}
-      </svg>
+      <div style="position:relative;width:${size}px;height:${size}px;flex-shrink:0;">
+        <div class="yak-avatar-idle" style="width:100%;height:100%;border-radius:50%;overflow:hidden;background:var(--card-2);display:flex;align-items:center;justify-content:center;">
+          <img src="${a.file}" alt="${a.nameKey ? t(a.nameKey) : a.id}" style="width:114%;height:114%;object-fit:cover;animation-delay:${delay}s;" />
+        </div>
+        ${crownBadge}
+      </div>
       ${medalIcons.length ? `
-        <div style="display:flex;gap:3px;margin-top:2px;">
+        <div style="display:flex;gap:3px;margin-top:3px;">
           ${medalIcons.map(ic => `<span style="font-size:${Math.max(10, Math.round(size * 0.22))}px;">${ic}</span>`).join('')}
           ${extra > 0 ? `<span style="font-size:${Math.max(9, Math.round(size * 0.18))}px;color:var(--text-faint);align-self:center;">+${extra}</span>` : ''}
         </div>` : ''}

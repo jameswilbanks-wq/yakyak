@@ -61,6 +61,13 @@ a { color: var(--mint); }
 .pulse-dot { position:absolute; inset:0; border-radius:999px; animation: pulse 1.8s ease-out infinite; }
 @keyframes pulse { 0%{ box-shadow:0 0 0 0 var(--accent-soft);} 100%{ box-shadow:0 0 0 10px rgba(0,0,0,0);} }
 
+/* Gives the illustrated yak avatars a small idle bob/sway so they read as
+   "alive" rather than static photos — the images themselves are static,
+   this is a pure CSS loop. Applied to the <img>, not its circular
+   overflow:hidden wrapper, so the motion stays clipped to the frame. */
+@keyframes yakBob { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-4%) rotate(-2deg); } }
+.yak-avatar-idle img { animation: yakBob 3.2s ease-in-out infinite; transform-origin: 50% 80%; }
+
 .fade-slide { animation: fadeslide .45s cubic-bezier(.16,1,.3,1); text-align:center; }
 @keyframes fadeslide { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:translateY(0);} }
 
