@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -73,7 +73,7 @@
         <div style="margin-top:18px;">
           ${next ? `
             <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:6px;" class="text-faint">
-              <span>✨ ${xp} XP</span>
+              <span>${icon('sparkle', { size: 11 })} ${xp} XP</span>
               <span>${t('ev.toGo', { n: Math.max(0, next.minXp - xp) })}</span>
             </div>
             <div style="height:8px;border-radius:999px;background:var(--card-2);overflow:hidden;">
@@ -106,7 +106,7 @@
               <div class="text-dim" style="font-size:12px;margin-top:4px;line-height:1.45;${reached ? '' : 'opacity:.75;'}">${stage.desc}</div>
             </div>
             <div style="flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:${reached ? 'var(--mint)' : 'var(--text-faint)'};white-space:nowrap;">
-              ${reached ? '✓ ' : ''}${xpNote}
+              ${reached ? icon('check', { size: 11 }) + ' ' : ''}${xpNote}
             </div>
           </div>`;
       }).join('');

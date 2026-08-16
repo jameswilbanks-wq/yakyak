@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -30,7 +30,7 @@
     // regardless of which language they're learning — each row shows its
     // own target language as a tag so a mixed-language household still
     // reads clearly. "This week" is summed live from xp_events (logged by
-    // updateStreakAndActivity in supabase-client.js); "all-time" reads
+    // updateStreakAndActivity in js/supabase-client.js); "all-time" reads
     // straight off profiles.xp.
     let user = null, profile = null, people = [], tab = 'week', cheeredIds = new Set();
 
@@ -71,7 +71,7 @@
           </div>
 
           <a href="evolution.html" class="card" style="margin-top:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);">
-            <div style="font-size:24px;">🐂</div>
+            <div style="color:var(--accent-ink);">${icon('yak', { size: 24 })}</div>
             <div style="flex:1;">
               <div style="font-weight:800;font-size:14px;">${t('ev.cardTitle')}</div>
               <div class="text-faint" style="font-size:12px;margin-top:2px;">${t('ev.cardDesc')}</div>
@@ -91,11 +91,11 @@
           </div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:800;font-size:14.5px;">${p.name}${p.id === user.id ? ` · ${t('bc.you')}` : ''}</div>
-            <div class="text-faint" style="font-size:11.5px;margin-top:2px;">${langByCode(p.target_language).name} · ${p.current_level} · 🔥 ${p.streak} · 🏅 ${p.badgeCount}</div>
+            <div class="text-faint" style="font-size:11.5px;margin-top:2px;">${langByCode(p.target_language).name} · ${p.current_level} · ${icon('flame', { size: 12 })} ${p.streak} · ${icon('medal', { size: 12 })} ${p.badgeCount}</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-weight:800;font-size:15px;color:var(--accent-ink);">✨ ${metricFor(p)}</div>
-            ${p.id !== user.id ? `<button class="btn-ghost" data-cheer="${p.id}" style="margin-top:4px;font-size:12px;padding:6px 10px;">${cheeredIds.has(p.id) ? t('bc.cheered') : '🤝 ' + t('bc.cheerBtn')}</button>` : ''}
+            <div style="font-weight:800;font-size:15px;color:var(--accent-ink);">${icon('sparkle', { size: 13 })} ${metricFor(p)}</div>
+            ${p.id !== user.id ? `<button class="btn-ghost" data-cheer="${p.id}" style="margin-top:4px;font-size:12px;padding:6px 10px;">${cheeredIds.has(p.id) ? t('bc.cheered') : icon('handshake', { size: 13 }) + ' ' + t('bc.cheerBtn')}</button>` : ''}
           </div>
         </div>`).join('');
 
@@ -114,11 +114,14 @@
       const me = people.find(p => p.id === user.id) || { badgeCodes: [] };
       const earnedCodes = new Set(me.badgeCodes);
       document.getElementById('badgeProgress').textContent = t('bc.markersEarned', { n: earnedCodes.size, total: BADGES.length });
-      document.getElementById('badgeGrid').innerHTML = BADGES.map(b => `
-        <div style="text-align:center;width:76px;opacity:${earnedCodes.has(b.code) ? '1' : '.32'};" title="${b.desc}">
-          <div style="font-size:26px;">${b.icon}</div>
-          <div style="font-size:10.5px;font-weight:700;margin-top:2px;line-height:1.2;">${b.name}</div>
-        </div>`).join('');
+      document.getElementById('badgeGrid').innerHTML = BADGES.map(b => {
+        const earned = earnedCodes.has(b.code);
+        return `
+        <div style="text-align:center;width:76px;" title="${b.desc}">
+          <div class="badge-icon-lg${earned ? ' earned' : ' locked'}" style="margin:0 auto;">${icon(b.icon)}</div>
+          <div style="font-size:10.5px;font-weight:700;margin-top:6px;line-height:1.2;${earned ? '' : 'color:var(--text-faint);'}">${b.name}</div>
+        </div>`;
+      }).join('');
     }
 
     document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
@@ -166,7 +169,7 @@
         const names = [...new Set(unseenCheers.map(c => byName[c.from_user_id]).filter(Boolean))];
         document.getElementById('cheerNotif').innerHTML = `
           <div class="card" style="background:var(--mint-soft);border-color:var(--mint);margin-bottom:16px;font-size:13px;">
-            🤝 ${names.length ? t('bc.cheerNotifNamed', { names: names.join(', ') }) : t('bc.cheerNotif', { n: unseenCheers.length })}
+            ${icon('handshake', { size: 15 })} ${names.length ? t('bc.cheerNotifNamed', { names: names.join(', ') }) : t('bc.cheerNotif', { n: unseenCheers.length })}
           </div>`;
         try { await db.from('cheers').update({ seen: true }).eq('to_user_id', user.id).eq('seen', false); } catch (e) {}
       }

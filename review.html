@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -170,7 +170,7 @@
       if (item.kind === 'grammar') {
         slot.innerHTML = `
           <p class="text-dim" style="font-size:13px;line-height:1.5;">${escapeHtml(item.back)}</p>
-          <button class="btn-ghost" id="fullExplainerBtn" style="margin-top:8px;padding-left:0;">📐 ${t('rv.fullExplainer')} →</button>`;
+          <button class="btn-ghost" id="fullExplainerBtn" style="margin-top:8px;padding-left:0;">${icon('ruler', { size: 14 })} ${t('rv.fullExplainer')} →</button>`;
         document.getElementById('fullExplainerBtn').addEventListener('click', () => {
           const url = 'study-guide.html?type=grammar&topic=' + encodeURIComponent(item.front);
           window.open(url, '_blank');
@@ -187,7 +187,7 @@
             <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
               <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
                 <p style="font-size:13.5px;font-weight:600;">${escapeHtml(ex.exampleTarget)}</p>
-                <button class="icon-btn icon-btn-sm" id="exAudioBtn">🔊</button>
+                <button class="icon-btn icon-btn-sm" id="exAudioBtn">${icon('speaker', { size: 14 })}</button>
               </div>
               ${ex.exampleNative ? `<p class="text-faint" style="font-size:12px;margin-top:4px;">${escapeHtml(ex.exampleNative)}</p>` : ''}
             </div>`;
@@ -230,7 +230,7 @@
           </div>
           <div style="margin-top:28px;text-align:center;" id="pronMicArea">
             ${micSupported ? `
-              <button class="mic-btn" id="pronMicBtn">🎙️</button>
+              <button class="mic-btn" id="pronMicBtn">${icon('mic')}</button>
               <p class="text-faint" style="font-size:12px;margin-top:10px;" id="pronMicHint">${t('rv.sayAloud')}</p>
             ` : ''}
           </div>
@@ -330,7 +330,7 @@
 
       isRecording = true;
       micBtn.classList.add('recording');
-      micBtn.textContent = '⏹️';
+      micBtn.innerHTML = icon('mic');
       hint.textContent = t('in.recordingTapStop');
     }
 
@@ -340,7 +340,7 @@
       const onGraded = activeOnGraded;
       isRecording = false;
       micBtn.classList.remove('recording');
-      micBtn.textContent = '🎙️';
+      micBtn.innerHTML = icon('mic');
       micBtn.disabled = true;
       hint.textContent = t('in.processing');
 
@@ -387,7 +387,7 @@
     function renderMastered(next) {
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
-          <div style="font-size:36px;">✅</div>
+          <div style="color:var(--mint);">${icon('check', { size: 36 })}</div>
           <h2 style="font-size:19px;margin:12px 0 4px;">${t('rv.mastered')}</h2>
           <p class="text-dim" style="font-size:13px;">${t('rv.masteredSub')}</p>
         </div>`;
@@ -399,7 +399,7 @@
       document.getElementById('topLabel').textContent = '';
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
-          <div style="font-size:40px;">🏆</div>
+          <div style="color:var(--accent-ink);">${icon('trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rv.reviewDone')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rv.rememberedOfTotal', { c: correctCount, t: reviewedCount, xp: xpEarned })}</p>
           ${gradCount ? `<p class="text-dim" style="font-size:13px;margin-top:4px;">${t('rv.gradCount', { n: gradCount })}</p>` : ''}

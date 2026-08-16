@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -89,7 +89,7 @@
       else { titleKey = 'lvt.cooldownTitle'; bodyKey = 'lvt.cooldownBody'; vars = { n: formatHoursRemaining(elig.cooldownUntil) }; }
       document.getElementById('ltBody').innerHTML = `
         <div class="lesson-center error-box" style="padding:70px 0;">
-          <div style="font-size:34px;">🔒</div>
+          <div style="color:var(--text-faint);">${icon('lock', { size: 34 })}</div>
           <p style="font-weight:800;font-size:17px;">${t(titleKey)}</p>
           <p class="text-faint" style="font-size:13px;max-width:320px;">${t(bodyKey, vars)}</p>
           <button class="btn-primary" id="backBtn" style="margin-top:8px;">${t('lvt.backToDashboard')}</button>
@@ -124,7 +124,7 @@
     function renderGenerateError() {
       document.getElementById('ltBody').innerHTML = `
         <div class="lesson-center error-box" style="padding:50px 0;">
-          <div style="font-size:30px;">⚠️</div>
+          <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
           <p style="font-weight:700;">${t('lvt.couldntBuild')}</p>
           <button class="btn-primary" id="retryBtn">${t('ls.tryAgain')}</button>
         </div>`;
@@ -320,7 +320,7 @@
       recognition.start();
       isRecording = true;
       micBtn.classList.add('recording');
-      micBtn.textContent = '⏹️';
+      micBtn.innerHTML = icon('mic');
       hint.textContent = t('in.recordingTapStop');
     }
 
@@ -328,7 +328,7 @@
       const micBtn = activeMicBtn, hint = activeHint, onGraded = activeOnGraded;
       isRecording = false;
       micBtn.classList.remove('recording');
-      micBtn.textContent = '🎙️';
+      micBtn.innerHTML = icon('mic');
       micBtn.disabled = true;
       hint.textContent = t('in.processing');
       let recognitionDone = false, recorderDone = false;
@@ -355,7 +355,7 @@
             <div style="font-size:18px;font-weight:700;">${escapeHtml(speakSentence)}</div>
           </div>
           ${micSupported ? `
-            <button class="mic-btn" id="micBtn">🎙️</button>
+            <button class="mic-btn" id="micBtn">${icon('mic')}</button>
             <p class="text-faint" id="micHint" style="text-align:center;font-size:12.5px;margin-top:12px;">&nbsp;</p>
           ` : `
             <button class="btn-primary" id="skipMicBtn" style="width:100%;justify-content:center;">${t('lvt.nextBtn')}</button>
@@ -480,7 +480,7 @@
       document.getElementById('ltBody').innerHTML = `
         <div class="lesson-body">
           <div class="lesson-center" style="padding:10px 0 20px;">
-            <div style="font-size:40px;">${passed ? '🎉' : '💪'}</div>
+            <div style="color:${passed ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(passed ? 'confetti' : 'bicep', { size: 40 })}</div>
             <h1 style="font-size:23px;margin-top:8px;">${passed ? t('lvt.resultsTitlePass') : t('lvt.resultsTitleFail')}</h1>
             <p class="text-dim" style="font-size:14px;margin-top:4px;">${t('lvt.resultsScore', { n: overallScore })} · ${t('lvt.passNeeded')}</p>
           </div>

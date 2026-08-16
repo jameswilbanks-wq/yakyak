@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -55,7 +55,7 @@
     function renderError(message) {
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-center error-box">
-          <div style="font-size:30px;">⚠️</div>
+          <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
           <p style="font-weight:700;">${t('rl.couldntBuild')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
           <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
@@ -222,7 +222,7 @@
         ${s.newParagraph && i > 0 ? '<div style="height:14px;"></div>' : ''}
         <div class="rl-sentence" data-idx="${i}" style="margin-bottom:${translationOn ? '14px' : '4px'};">
           <div style="display:flex;align-items:baseline;gap:8px;">
-            <button class="icon-btn icon-btn-sm rl-sentence-play" data-idx="${i}" style="flex-shrink:0;">🔊</button>
+            <button class="icon-btn icon-btn-sm rl-sentence-play" data-idx="${i}" style="flex-shrink:0;">${icon('speaker', { size: 14 })}</button>
             <span style="font-size:15.5px;line-height:1.8;">${targetHTML}</span>
           </div>
           ${translationOn ? `<div class="text-faint" style="font-size:12.5px;line-height:1.6;margin-left:34px;margin-top:2px;">${nativeHTML}</div>` : ''}
@@ -332,7 +332,7 @@
         <div class="modal-card" style="max-width:320px;text-align:center;">
           <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
             <h2 style="font-size:22px;font-family:var(--font-display);">${escapeHtml(word)}</h2>
-            <button class="icon-btn icon-btn-sm" id="wordAudioBtn">🔊</button>
+            <button class="icon-btn icon-btn-sm" id="wordAudioBtn">${icon('speaker', { size: 14 })}</button>
           </div>
           <p class="text-faint" id="wordPhonetic" style="font-size:13px;margin-top:4px;min-height:16px;">${t('rl.lookingUp')}</p>
           <p class="text-dim" id="wordTranslation" style="font-size:15px;margin-top:12px;font-weight:600;min-height:20px;"></p>
@@ -412,7 +412,7 @@
       document.getElementById('topLabel').textContent = '';
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-center">
-          <div style="font-size:40px;">${correctCount === results.length ? '🎉' : '📖'}</div>
+          <div style="color:${correctCount === results.length ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(correctCount === results.length ? 'confetti' : 'book', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rl.passageComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rl.correctOfTotal', { c: correctCount, t: results.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>

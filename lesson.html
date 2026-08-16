@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="lessonTitle" style="font-size:12.5px;"></span>
     </div>
@@ -41,7 +41,7 @@
     function renderError(message) {
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center error-box">
-          <div style="font-size:30px;">⚠️</div>
+          <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
           <p style="font-weight:700;">${t('ls.couldntGenerate')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
           <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
@@ -110,14 +110,14 @@
 
       document.getElementById('vocabList').innerHTML = lesson.vocab.map((v, i) => `
         <div class="vocab-row">
-          <button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(v.target)}">🔊</button>
+          <button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(v.target)}">${icon('speaker', { size: 14 })}</button>
           <span style="font-weight:700;font-family:var(--font-display);">${v.target}</span>
           <span class="text-faint">${v.native}</span>
         </div>`).join('');
 
       document.getElementById('dialogueBox').innerHTML = lesson.dialogue.map(l => `
         <div class="dialogue-line${l.speaker === 'A' ? '' : ' b'}">
-          <button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(l.target)}">🔊</button>
+          <button class="icon-btn icon-btn-sm" data-speak="${encodeURIComponent(l.target)}">${icon('speaker', { size: 14 })}</button>
           <div>
             <div style="font-weight:600;">${l.target}</div>
             <div class="text-faint" style="font-size:12px;">${l.native}</div>
@@ -149,7 +149,7 @@
         <div class="lesson-body">
           <span class="chip-mini">${t('ls.speaker')} ${line.speaker}</span>
           <div class="card" style="margin-top:14px;display:flex;align-items:center;gap:10px;">
-            <button class="icon-btn icon-btn-sm" id="dqSpeakBtn">🔊</button>
+            <button class="icon-btn icon-btn-sm" id="dqSpeakBtn">${icon('speaker', { size: 14 })}</button>
             <p style="font-size:17px;font-weight:700;font-family:var(--font-display);">${line.target}</p>
           </div>
           <label class="label" style="margin-top:22px;">${t('ls.whatDoesMean', { lang: nativeLangDisplay(profile.native_language) })}</label>
@@ -226,7 +226,7 @@
       document.getElementById('lessonTitle').textContent = '';
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
-          <div style="font-size:40px;">${correct === total ? '🎉' : '📝'}</div>
+          <div style="color:${correct === total ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(correct === total ? 'confetti' : 'pencil', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${correct === total ? t('ls.perfect') : t('ls.almostThere')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('ls.correctOfTotal', { c: correct, t: total })}</p>
           ${missed.length ? `
@@ -284,7 +284,7 @@
       document.getElementById('lessonTitle').textContent = '';
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
-          <div style="font-size:40px;">🏆</div>
+          <div style="color:var(--accent-ink);">${icon('trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('ls.lessonComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${t('ls.correctOfTotal', { c: correctCount, t: lesson.quiz.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>

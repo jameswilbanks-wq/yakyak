@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -45,7 +45,7 @@
     function renderError(message) {
       document.getElementById('vocabBody').innerHTML = `
         <div class="lesson-center error-box">
-          <div style="font-size:30px;">⚠️</div>
+          <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
           <p style="font-weight:700;">${t('vc.couldntBuild')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${message}</p>
           <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
@@ -122,14 +122,14 @@
           <div class="card" style="text-align:center;">
             ${w.partOfSpeech ? `<span class="chip-mini" style="margin:0 auto 12px;">${w.partOfSpeech}</span>` : ''}
             <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
-              <button class="icon-btn icon-btn-sm" id="speakBtn">🔊</button>
+              <button class="icon-btn icon-btn-sm" id="speakBtn">${icon('speaker', { size: 14 })}</button>
               <p style="font-size:23px;font-weight:800;font-family:var(--font-display);">${w.targetText}</p>
             </div>
             <p class="text-dim" style="font-size:15px;margin-top:6px;">${w.nativeText}</p>
             ${w.exampleTarget ? `
               <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border);text-align:left;">
                 <div style="display:flex;align-items:baseline;gap:8px;">
-                  <button class="icon-btn icon-btn-sm" id="sentenceSpeakBtn" style="flex-shrink:0;">🔊</button>
+                  <button class="icon-btn icon-btn-sm" id="sentenceSpeakBtn" style="flex-shrink:0;">${icon('speaker', { size: 14 })}</button>
                   <p style="font-size:14px;font-weight:600;line-height:1.6;">${sentenceHTML.targetHTML}</p>
                 </div>
                 <p class="text-faint" style="font-size:12.5px;line-height:1.5;margin-top:3px;margin-left:34px;">${sentenceHTML.nativeHTML}</p>
@@ -197,7 +197,7 @@
       document.getElementById('topLabel').textContent = '';
       document.getElementById('vocabBody').innerHTML = `
         <div class="lesson-center">
-          <div style="font-size:40px;">${correctCount === words.length ? '🎉' : '📚'}</div>
+          <div style="color:${correctCount === words.length ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(correctCount === words.length ? 'confetti' : 'books', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('vc.batchComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('vc.correctOfTotal', { c: correctCount, t: words.length })}</p>
           <p class="text-faint" style="font-size:12px;margin-top:6px;">${t('vc.addedToReview')}</p>

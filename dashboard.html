@@ -13,11 +13,11 @@
       <p class="text-dim" id="loadingLabel">Loading…</p>
     </div>
     <div class="bottom-nav">
-      <a class="nav-item active" href="dashboard.html" id="navHome">🏠<span>Home</span></a>
-      <a class="nav-item" href="review.html" id="navProgress">📊<span>Progress</span></a>
-      <a class="nav-item" href="roleplay.html" id="navTalk">💬<span>Talk</span></a>
-      <a class="nav-item" href="basecamp.html" id="navBasecamp">🏕️<span>Basecamp</span></a>
-      <button class="nav-item" id="signOutBtn" style="cursor:pointer;">👤<span id="navSignoutLabel">Sign out</span></button>
+      <a class="nav-item active" href="dashboard.html" id="navHome"></a>
+      <a class="nav-item" href="review.html" id="navProgress"></a>
+      <a class="nav-item" href="roleplay.html" id="navTalk"></a>
+      <a class="nav-item" href="basecamp.html" id="navBasecamp"></a>
+      <button class="nav-item" id="signOutBtn" style="cursor:pointer;"></button>
     </div>
   </div>
 
@@ -25,10 +25,10 @@
   <script src="i18n.js"></script>
   <script>
     const MODULE_INFO = {
-      vocab: { icon: '📚', nameKey: 'db.vocabChip' },
-      translate: { icon: '🔤', nameKey: 'db.translateDiagnose' },
-      roleplay: { icon: '🗣️', nameKey: 'db.naturalDialogChip' },
-      input: { icon: '📖', nameKey: 'db.listenRead' },
+      vocab: { icon: 'books', nameKey: 'db.vocabChip' },
+      translate: { icon: 'letters', nameKey: 'db.translateDiagnose' },
+      roleplay: { icon: 'speak', nameKey: 'db.naturalDialogChip' },
+      input: { icon: 'book', nameKey: 'db.listenRead' },
     };
 
     let user = null, profile = null, completionCount = 0, vocabProgress = { learned: 0, target: 1000 }, myBadgeCodes = [];
@@ -70,23 +70,25 @@
         </div>
         <div id="coachSlot"></div>
         <div id="cheerBannerSlot"></div>
-        <div class="dash-header">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <button id="avatarBtn" title="${t('ev.viewEvolution')}" style="width:76px;height:auto;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;"></button>
+        <div class="dash-header hero-card" style="padding:4px 0 0;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="avatar-ring" id="avatarRing" style="--ring-pct:0;">
+              <button id="avatarBtn" title="${t('ev.viewEvolution')}" style="width:76px;height:76px;border-radius:50%;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;display:block;"></button>
+            </div>
             <div>
               <h1 style="font-size:22px;">${greeting()}, ${profile.name}.</h1>
               <p class="text-faint" style="font-size:12.5px;">${profile.current_level} → ${profile.target_level}</p>
             </div>
           </div>
           <div style="display:flex;gap:8px;">
-            <div class="stat-pill">🔥 <span>${profile.streak}</span></div>
-            <div class="stat-pill">✨ <span>${profile.xp}</span></div>
+            <div class="stat-pill" style="color:var(--accent-ink);">${icon('flame', { size: 15 })} <span>${profile.streak}</span></div>
+            <div class="stat-pill" style="color:var(--accent-ink);">${icon('sparkle', { size: 15 })} <span>${profile.xp}</span></div>
           </div>
         </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
           <span class="chip-mini" id="tierBadge" style="background:var(--mint-soft);color:var(--mint);"></span>
-          <button class="btn-ghost" id="evaluateBtn">🎯 ${t('lvl.evaluateBtn')}</button>
+          <button class="btn-ghost" id="evaluateBtn">${icon('target', { size: 15 })} ${t('lvl.evaluateBtn')}</button>
         </div>
 
         <div id="levelTestBannerSlot"></div>
@@ -94,6 +96,9 @@
       `;
       document.getElementById('avatarBtn').innerHTML = yakAvatarHTML(currentEvolutionStage(profile.xp).avatarId, 76, myBadgeCodes);
       document.getElementById('avatarBtn').addEventListener('click', () => { window.location.href = 'evolution.html'; });
+      const evoStage = currentEvolutionStage(profile.xp), evoNext = nextEvolutionStage(profile.xp);
+      const ringPct = evoNext ? Math.max(4, Math.round(((profile.xp - evoStage.minXp) / (evoNext.minXp - evoStage.minXp)) * 100)) : 100;
+      document.getElementById('avatarRing').style.setProperty('--ring-pct', ringPct);
       document.getElementById('tierBadge').textContent = profile.assessed_level
         ? tierLabel(profile.assessed_level)
         : t('lvl.gathering', { n: Math.min(profile.total_activities || 0, FIRST_EVAL_MIN_ACTIVITIES), total: FIRST_EVAL_MIN_ACTIVITIES });
@@ -111,7 +116,7 @@
       if (elig.eligible) {
         slot.innerHTML = `
           <a href="level-test.html" class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);border:1px solid var(--accent);background:var(--accent-soft);">
-            <div style="font-size:24px;">🏆</div>
+            <div style="color:var(--accent-ink);">${icon('trophy', { size: 24 })}</div>
             <div style="flex:1;">
               <div style="font-weight:800;font-size:14px;color:var(--accent-ink);">${t('lvt.dashBannerTitle')}</div>
               <div class="text-faint" style="font-size:12px;margin-top:2px;">${t('lvt.dashBannerDesc', { level: profile.current_level, next: elig.nextLevel })}</div>
@@ -121,7 +126,7 @@
       } else if (elig.reason === 'cooldown') {
         slot.innerHTML = `
           <div class="card" style="margin-bottom:14px;font-size:12.5px;">
-            <span class="text-faint">⏳ ${t('lvt.dashBannerCooldownDesc', { n: formatHoursRemaining(elig.cooldownUntil) })}</span>
+            <span class="text-faint">${t('lvt.dashBannerCooldownDesc', { n: formatHoursRemaining(elig.cooldownUntil) })}</span>
           </div>`;
       } else {
         slot.innerHTML = '';
@@ -163,12 +168,12 @@
       const slot = document.getElementById('mainSlot');
       slot.innerHTML = `
         <button class="card" id="forkPlanBtn" style="text-align:left;width:100%;cursor:pointer;border:1px solid var(--accent);">
-          <span class="chip-mini">🤖 ${t('pl.forkPlanChip')}</span>
+          <span class="chip-mini">${icon('bot', { size: 12 })} ${t('pl.forkPlanChip')}</span>
           <h2 style="font-size:20px;margin:8px 0 4px;">${t('pl.forkPlanTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;">${t('pl.forkPlanDesc')}</p>
         </button>
         <button class="card" id="forkCarteBtn" style="text-align:left;width:100%;cursor:pointer;margin-top:14px;">
-          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">🍽️ ${t('pl.forkCarteChip')}</span>
+          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${icon('fork', { size: 12 })} ${t('pl.forkCarteChip')}</span>
           <h2 style="font-size:20px;margin:8px 0 4px;">${t('pl.forkCarteTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;">${t('pl.forkCarteDesc')}</p>
         </button>
@@ -243,7 +248,7 @@
       } catch (e) {
         slot.innerHTML = `
           <div class="lesson-center error-box" style="padding:30px 0;">
-            <div style="font-size:30px;">⚠️</div>
+            <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
             <p style="font-weight:700;">${t('pl.couldntBuild')}</p>
             <p class="text-faint" style="font-size:12.5px;max-width:320px;">${e.message || 'Unknown error'}</p>
             <button class="btn-primary" id="retryPlanBtn" style="margin-top:8px;">${t('ls.tryAgain')}</button>
@@ -264,11 +269,11 @@
           <button class="btn-ghost" id="backToTimeBtn" style="width:100%;justify-content:center;margin-top:8px;">${t('pl.back')}</button>
         </div>`;
       document.getElementById('planStepsList').innerHTML = data.steps.map((s, i) => {
-        const info = MODULE_INFO[s.module] || { icon: '•', nameKey: '' };
+        const info = MODULE_INFO[s.module] || { icon: 'sparkle', nameKey: '' };
         return `
         <div class="card" style="padding:12px 14px;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:18px;">${info.icon}</span>
+          <div style="display:flex;align-items:center;gap:10px;color:var(--accent-ink);">
+            <span>${icon(info.icon, { size: 18 })}</span>
             <div style="flex:1;">
               <div style="font-weight:700;font-size:14px;">${i + 1}. ${info.nameKey ? t(info.nameKey) : s.module}</div>
               ${s.reason ? `<div class="text-faint" style="font-size:11.5px;margin-top:2px;">${s.reason}</div>` : ''}
@@ -290,7 +295,7 @@
       const learning = langByCode(profile.target_language);
       slot.innerHTML = `
         <div class="card">
-          <span class="chip-mini">🗣️ ${t('db.naturalDialogChip')}</span>
+          <span class="chip-mini">${icon('speak', { size: 12 })} ${t('db.naturalDialogChip')}</span>
           <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.naturalDialogTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.naturalDialogDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startLessonBtn">${t('db.startTalking')}</button>
@@ -311,7 +316,7 @@
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">📖 ${t('db.readingChip')}</span>
+          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${icon('book', { size: 12 })} ${t('db.readingChip')}</span>
           <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.readingTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.readingDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startReadingBtn">${t('db.startReading')}</button>
@@ -319,7 +324,7 @@
 
         <div class="card" style="margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-            <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">📚 ${t('db.vocabChip')}</span>
+            <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${icon('books', { size: 12 })} ${t('db.vocabChip')}</span>
             <span class="text-faint" style="font-size:11px;">${t('db.vocabProgress', { learned: vocabProgress.learned, target: vocabProgress.target, level: profile.current_level })}</span>
           </div>
           <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.vocabTitle')}</h2>
@@ -328,7 +333,7 @@
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini">📐 ${t('db.studyGuideChip')}</span>
+          <span class="chip-mini">${icon('ruler', { size: 12 })} ${t('db.studyGuideChip')}</span>
           <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.studyGuideTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.studyGuideDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startStudyGuideBtn">${t('db.startStudyGuide')}</button>
@@ -361,11 +366,11 @@
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
       document.getElementById('loadingLabel').textContent = t('db.loading');
-      document.getElementById('navHome').querySelector('span').textContent = t('nav.home');
-      document.getElementById('navProgress').querySelector('span').textContent = t('nav.progress');
-      document.getElementById('navTalk').querySelector('span').textContent = t('nav.talk');
-      document.getElementById('navBasecamp').querySelector('span').textContent = t('nav.basecamp');
-      document.getElementById('navSignoutLabel').textContent = t('nav.signout');
+      document.getElementById('navHome').innerHTML = icon('home') + `<span>${t('nav.home')}</span>`;
+      document.getElementById('navProgress').innerHTML = icon('chart') + `<span>${t('nav.progress')}</span>`;
+      document.getElementById('navTalk').innerHTML = icon('chat') + `<span>${t('nav.talk')}</span>`;
+      document.getElementById('navBasecamp').innerHTML = icon('tent') + `<span>${t('nav.basecamp')}</span>`;
+      document.getElementById('signOutBtn').innerHTML = icon('user') + `<span id="navSignoutLabel">${t('nav.signout')}</span>`;
 
       // Landing on the dashboard always starts a fresh choice — any plan
       // left mid-way from a previous visit is intentionally abandoned here,
@@ -392,7 +397,7 @@
         if (cheerCount) {
           document.getElementById('cheerBannerSlot').innerHTML = `
             <a class="card" href="basecamp.html" style="display:block;margin-bottom:14px;background:var(--mint-soft);border-color:var(--mint);text-decoration:none;color:var(--text);font-size:13px;">
-              🤝 ${t('db.cheerBanner', { n: cheerCount })}
+              ${icon('handshake', { size: 15 })} ${t('db.cheerBanner', { n: cheerCount })}
             </a>`;
         }
       } catch (e) {}

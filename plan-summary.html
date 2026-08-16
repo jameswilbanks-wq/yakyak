@@ -16,27 +16,27 @@
   <script src="i18n.js"></script>
   <script>
     const MODULE_INFO = {
-      vocab: { icon: '📚', nameKey: 'db.vocabChip' },
-      translate: { icon: '🔤', nameKey: 'db.translateDiagnose' },
-      roleplay: { icon: '🗣️', nameKey: 'db.naturalDialogChip' },
-      input: { icon: '📖', nameKey: 'db.listenRead' },
+      vocab: { icon: 'books', nameKey: 'db.vocabChip' },
+      translate: { icon: 'letters', nameKey: 'db.translateDiagnose' },
+      roleplay: { icon: 'speak', nameKey: 'db.naturalDialogChip' },
+      input: { icon: 'book', nameKey: 'db.listenRead' },
     };
 
     function renderSummary(profile, plan) {
       const steps = plan.steps || [];
       document.getElementById('summaryBody').innerHTML = `
         <div class="lesson-center" style="padding-top:40px;">
-          <div style="font-size:44px;">🎉</div>
+          <div style="color:var(--mint);">${icon('confetti', { size: 44 })}</div>
           <h2 style="font-size:26px;margin:14px 0 4px;">${t('pl.summaryTitle')}</h2>
           <p class="text-dim" style="font-size:15px;">${t('pl.summaryXp', { xp: plan.totalXp || 0 })}</p>
           <div class="card" style="margin-top:22px;text-align:left;max-width:360px;width:100%;">
             <span class="label">${t('pl.summaryStepsRecap')}</span>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
               ${steps.map(s => {
-                const info = MODULE_INFO[s.module] || { icon: '•', nameKey: '' };
-                return `<div style="display:flex;align-items:center;gap:10px;">
-                  <span style="font-size:16px;">${info.icon}</span>
-                  <span style="flex:1;font-size:13.5px;">${info.nameKey ? t(info.nameKey) : s.module}</span>
+                const info = MODULE_INFO[s.module] || { icon: 'sparkle', nameKey: '' };
+                return `<div style="display:flex;align-items:center;gap:10px;color:var(--accent-ink);">
+                  <span>${icon(info.icon, { size: 16 })}</span>
+                  <span style="flex:1;font-size:13.5px;color:var(--text);">${info.nameKey ? t(info.nameKey) : s.module}</span>
                   <span class="chip-mini">${s.minutes} min</span>
                 </div>`;
               }).join('')}

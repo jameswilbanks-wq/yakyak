@@ -504,21 +504,21 @@ async function recordActivityAndMaybeEvaluate(user, profile) {
 // progress on the trail, and the rest reward balanced practice across
 // YakYak's modules rather than pure login streaks.
 const BADGES = [
-  { code: 'waypoint_pre_a1', name: 'Basecamp', icon: '⛺', desc: 'Started the trail', category: 'waypoint' },
-  { code: 'waypoint_a1', name: 'First Ridge', icon: '🥾', desc: 'Reached A1', category: 'waypoint' },
-  { code: 'waypoint_a2', name: 'Cloud Pass', icon: '☁️', desc: 'Reached A2', category: 'waypoint' },
-  { code: 'waypoint_b1', name: 'Alpine Meadow', icon: '🌼', desc: 'Reached B1', category: 'waypoint' },
-  { code: 'waypoint_b2', name: 'Summit Ridge', icon: '🏔️', desc: 'Reached B2', category: 'waypoint' },
-  { code: 'waypoint_c1', name: 'The Peak', icon: '🏁', desc: 'Reached C1', category: 'waypoint' },
-  { code: 'waypoint_c2', name: 'Beyond the Summit', icon: '🌟', desc: 'Reached C2', category: 'waypoint' },
-  { code: 'chatterbox', name: 'Chatterbox', icon: '💬', desc: 'Completed 10 Natural Dialog conversations', category: 'skill' },
-  { code: 'quick_ear', name: 'Quick Ear', icon: '🎧', desc: 'Scored 90+ average pronunciation on 10 Listen & Read sessions', category: 'skill' },
-  { code: 'bookworm', name: 'Bookworm', icon: '📖', desc: 'Finished 15 Reading Library passages', category: 'skill' },
-  { code: 'wordsmith', name: 'Wordsmith', icon: '📚', desc: 'Learned 200 vocabulary words', category: 'skill' },
-  { code: 'grammar_sleuth', name: 'Grammar Sleuth', icon: '🔍', desc: 'Corrected 25 grammar mistakes', category: 'skill' },
-  { code: 'early_bird', name: 'Early Bird', icon: '🌅', desc: 'Practiced before 7am, 5 times', category: 'personality' },
-  { code: 'night_owl', name: 'Night Owl', icon: '🦉', desc: 'Practiced after 10pm, 5 times', category: 'personality' },
-  { code: 'comeback_kid', name: 'Comeback Kid', icon: '🔥', desc: 'Rebuilt a streak of 5+ after breaking one', category: 'personality' },
+  { code: 'waypoint_pre_a1', name: 'Basecamp', icon: 'tent', desc: 'Started the trail', category: 'waypoint' },
+  { code: 'waypoint_a1', name: 'First Ridge', icon: 'boot', desc: 'Reached A1', category: 'waypoint' },
+  { code: 'waypoint_a2', name: 'Cloud Pass', icon: 'cloud', desc: 'Reached A2', category: 'waypoint' },
+  { code: 'waypoint_b1', name: 'Alpine Meadow', icon: 'flower', desc: 'Reached B1', category: 'waypoint' },
+  { code: 'waypoint_b2', name: 'Summit Ridge', icon: 'mountain', desc: 'Reached B2', category: 'waypoint' },
+  { code: 'waypoint_c1', name: 'The Peak', icon: 'flag', desc: 'Reached C1', category: 'waypoint' },
+  { code: 'waypoint_c2', name: 'Beyond the Summit', icon: 'star', desc: 'Reached C2', category: 'waypoint' },
+  { code: 'chatterbox', name: 'Chatterbox', icon: 'chat', desc: 'Completed 10 Natural Dialog conversations', category: 'skill' },
+  { code: 'quick_ear', name: 'Quick Ear', icon: 'headphones', desc: 'Scored 90+ average pronunciation on 10 Listen & Read sessions', category: 'skill' },
+  { code: 'bookworm', name: 'Bookworm', icon: 'book', desc: 'Finished 15 Reading Library passages', category: 'skill' },
+  { code: 'wordsmith', name: 'Wordsmith', icon: 'books', desc: 'Learned 200 vocabulary words', category: 'skill' },
+  { code: 'grammar_sleuth', name: 'Grammar Sleuth', icon: 'search', desc: 'Corrected 25 grammar mistakes', category: 'skill' },
+  { code: 'early_bird', name: 'Early Bird', icon: 'sunrise', desc: 'Practiced before 7am, 5 times', category: 'personality' },
+  { code: 'night_owl', name: 'Night Owl', icon: 'owl', desc: 'Practiced after 10pm, 5 times', category: 'personality' },
+  { code: 'comeback_kid', name: 'Comeback Kid', icon: 'flame', desc: 'Rebuilt a streak of 5+ after breaking one', category: 'personality' },
 ];
 
 // Centralizes the XP/streak/last-activity update every module performs at
@@ -625,7 +625,7 @@ function badgesEarnedHTML(badges) {
 function celebrationHTML(levelUpResult) {
   return `
     <div class="card" style="margin-top:18px;background:var(--mint-soft);border-color:var(--mint);text-align:center;">
-      <div style="font-size:34px;">🎉</div>
+      <div style="color:var(--mint);">${icon('confetti', { size: 34 })}</div>
       <h3 style="font-size:19px;margin:10px 0 4px;">${t('lvl.congrats', { tier: levelUpResult.tierLabel })}</h3>
       <p class="text-dim" style="font-size:13.5px;">${levelUpResult.reasoning || ''}</p>
     </div>`;
@@ -992,6 +992,67 @@ function grammarLessonHTML(result) {
     </div>`;
 }
 
+// --- Shared icon system --------------------------------------------------
+// Part of the Aug 2026 visual overhaul: raw OS emoji rendered differently
+// (or not at all) across platforms and read as dated/cheap. Every decorative
+// glyph in the product is now one of these inline SVGs instead, drawn to
+// match via currentColor + the .icon/.icon-lg/.icon-xl classes in
+// styles.css. Call icon('name') anywhere a template literal builds HTML;
+// call icon('name', {size}) for a one-off pixel size instead of the class
+// scale. Falls back to a blank sparkle-shaped glyph for unknown names
+// rather than throwing, since this only ever renders decorative chrome.
+const ICONS = {
+  flame:'<path d="M12 2c1 4-3 5-3 9a5 5 0 0 0 10 0c0-2-1-3-2-4 .5 2-1 3-2 2 1-2-1-3-3-7z"/>',
+  sparkle:'<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/>',
+  dice:'<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/><circle cx="15" cy="9" r="1" fill="currentColor"/><circle cx="9" cy="15" r="1" fill="currentColor"/>',
+  fork:'<path d="M7 2v8M5 2v5a2 2 0 0 0 4 0V2M17 2c-2 0-3 2-3 5s1 4 3 4V22"/>',
+  tent:'<path d="M3 20L12 4l9 16M8 20l4-8 4 8M3 20h18"/>',
+  cloud:'<path d="M7 18a4 4 0 1 1 .6-7.96A5 5 0 0 1 17 12h.5a3.5 3.5 0 1 1 0 7H7z"/>',
+  flower:'<circle cx="12" cy="12" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="12" r="2.2"/>',
+  mountain:'<path d="M3 19L10 6l3 5 2-3 6 11H3z"/>',
+  home:'<path d="M4 11l8-7 8 7M6 10v10h12V10"/>',
+  chart:'<path d="M5 20V10M12 20V4M19 20v-7"/>',
+  chat:'<path d="M4 5h16v11H8l-4 4V5z"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>',
+  trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 5H5a3 3 0 0 0 3 4M16 5h3a3 3 0 0 1-3 4"/><path d="M12 13v3M9 20h6M10 20v-2.5a2 2 0 0 1 4 0V20"/>',
+  target:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+  medal:'<circle cx="12" cy="14" r="6"/><path d="M9 8.5L7 3h3l2 4.5M15 8.5L17 3h-3l-2 4.5"/><circle cx="12" cy="14" r="2.4" fill="currentColor"/>',
+  speak:'<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9a4 4 0 0 1 0 6"/>',
+  books:'<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="9.5" y="4" width="5" height="16" rx="1"/><path d="M16.5 5.5l4 1.2-3 14-4-1.1"/>',
+  book:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5V5.5z"/><path d="M20 19H6.5A2.5 2.5 0 0 0 4 21.5"/>',
+  handshake:'<path d="M2 12l5-4 4 3 3-3 2 2 4-3 2 2-6 8-3-2-3 2z"/><path d="M9 15l3-3"/>',
+  bot:'<rect x="5" y="8" width="14" height="11" rx="3"/><circle cx="9.5" cy="13.5" r="1.3" fill="currentColor"/><circle cx="14.5" cy="13.5" r="1.3" fill="currentColor"/><path d="M12 8V4M9 4h6"/>',
+  letters:'<path d="M4 18L8.5 6h1L14 18M5.4 14h6.7"/><path d="M16 18v-6a3 3 0 1 1 3 3h-3"/>',
+  ruler:'<path d="M3 16.5L16.5 3l4.5 4.5L7.5 21 3 16.5z"/><path d="M13 6.5l1.5 1.5M10 9.5L11.5 11M7 12.5L8.5 14"/>',
+  warning:'<path d="M12 3l10 18H2z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="1" fill="currentColor"/>',
+  check:'<path d="M4 12l6 6L20 6"/>',
+  close:'<path d="M5 5l14 14M19 5L5 19"/>',
+  mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  speaker:'<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 7a8 8 0 0 1 0 10"/>',
+  headphones:'<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
+  pencil:'<path d="M4 20l1-4L16 5l3 3L8 19l-4 1z"/><path d="M14 7l3 3"/>',
+  confetti:'<path d="M4 20l3-9M8 20l2-11M13 20l3-13M4 6l3 1M15 4l2 2M19 8l-2 1"/>',
+  lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  bicep:'<path d="M4 17c0-6 3-11 7-12 2 3-1 4-1 6 3-1 6 1 6 4 3 0 4 3 3 6-3 2-9 3-12 1-2-1-3-3-3-5z"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 6.5l9 6 9-6"/>',
+  bag:'<path d="M6 7h12l1 14H5L6 7z"/><path d="M9 7V6a3 3 0 0 1 6 0v1"/>',
+  bulb:'<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
+  crown:'<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5L3 8z"/>',
+  flag:'<path d="M5 3v18"/><path d="M5 4h14l-3 4 3 4H5"/>',
+  boot:'<path d="M8 3h4v9l3 2h4v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6l4-2V3z"/>',
+  yak:'<ellipse cx="12" cy="14" rx="7" ry="6"/><path d="M6 10L4 6M18 10l2-4M9 12l-1 3M15 12l1 3"/><circle cx="9.5" cy="13" r="1" fill="currentColor"/><circle cx="14.5" cy="13" r="1" fill="currentColor"/>',
+  sunrise:'<path d="M3 18h18M6 18a6 6 0 0 1 12 0"/><path d="M12 6v3M5 9l2 2M19 9l-2 2"/>',
+  star:'<path d="M12 3l2.6 5.9 6.4.6-4.9 4.3 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.3 6.4-.6z"/>',
+  owl:'<path d="M7 3C4 5 3 8 3 11a5 5 0 0 0 5 5M17 3c3 2 4 5 4 8a5 5 0 0 1-5 5"/><circle cx="9" cy="12" r="2.3"/><circle cx="15" cy="12" r="2.3"/><path d="M12 14v3M9 21l3-2.5L15 21"/>',
+};
+function icon(name, opts) {
+  const body = ICONS[name] || ICONS.sparkle;
+  const cls = opts && opts.size ? '' : (opts && opts.cls ? opts.cls : 'icon');
+  const style = opts && opts.size ? ` style="width:${opts.size}px;height:${opts.size}px;vertical-align:-${Math.round(opts.size * 0.18)}px"` : '';
+  return `<svg class="${cls}"${style} viewBox="0 0 24 24">${body}</svg>`;
+}
+
 // --- Shared chunk-hover rendering ---------------------------------------
 // Any screen that shows a target-language sentence paired with its native
 // translation as aligned {target, native} chunks (see generate-extensive-
@@ -1129,7 +1190,7 @@ function yakAvatarHTML(avatarId, size, badgeCodes) {
   const extra = medalCodes.length - medalIcons.length;
 
   const crownBadge = crownTier ? `
-    <span style="position:absolute;top:-3px;right:-3px;width:${Math.round(size * 0.42)}px;height:${Math.round(size * 0.42)}px;border-radius:999px;background:${CROWN_TIERS[crownTier].fill};border:2px solid ${CROWN_TIERS[crownTier].stroke};display:flex;align-items:center;justify-content:center;font-size:${Math.max(9, Math.round(size * 0.24))}px;line-height:1;">👑</span>` : '';
+    <span style="position:absolute;top:-3px;right:-3px;width:${Math.round(size * 0.42)}px;height:${Math.round(size * 0.42)}px;border-radius:999px;background:${CROWN_TIERS[crownTier].fill};border:2px solid ${CROWN_TIERS[crownTier].stroke};display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 2px 5px rgba(0,0,0,.25);">${icon('crown', { size: Math.max(10, Math.round(size * 0.26)) })}</span>` : '';
 
   // Small per-instance randomized negative delay so multiple avatars on
   // the same screen (e.g. a Basecamp leaderboard) don't bob in lockstep.
@@ -1144,8 +1205,8 @@ function yakAvatarHTML(avatarId, size, badgeCodes) {
         ${crownBadge}
       </div>
       ${medalIcons.length ? `
-        <div style="display:flex;gap:3px;margin-top:3px;">
-          ${medalIcons.map(ic => `<span style="font-size:${Math.max(10, Math.round(size * 0.22))}px;">${ic}</span>`).join('')}
+        <div style="display:flex;gap:3px;margin-top:3px;color:var(--accent-ink);">
+          ${medalIcons.map(ic => icon(ic, { size: Math.max(10, Math.round(size * 0.22)) })).join('')}
           ${extra > 0 ? `<span style="font-size:${Math.max(9, Math.round(size * 0.18))}px;color:var(--text-faint);align-self:center;">+${extra}</span>` : ''}
         </div>` : ''}
     </div>`;

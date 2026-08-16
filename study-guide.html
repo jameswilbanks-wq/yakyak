@@ -15,7 +15,7 @@
           <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
           <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
         </div>
-        <button class="icon-btn" id="exitBtn">✕</button>
+        <button class="icon-btn" id="exitBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
       </div>
       <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
     </div>
@@ -28,9 +28,9 @@
     let user = null, profile = null, library = [], libraryFilter = null, newType = 'grammar';
 
     const TYPE_META = {
-      grammar: { icon: '📐', labelKey: 'sg.typeGrammar' },
-      vocab_theme: { icon: '🛍️', labelKey: 'sg.typeVocab' },
-      phrase_list: { icon: '💬', labelKey: 'sg.typePhrases' },
+      grammar: { icon: 'ruler', labelKey: 'sg.typeGrammar' },
+      vocab_theme: { icon: 'bag', labelKey: 'sg.typeVocab' },
+      phrase_list: { icon: 'chat', labelKey: 'sg.typePhrases' },
     };
 
     function renderLoading() {
@@ -46,7 +46,7 @@
     function renderError(message) {
       document.getElementById('sgBody').innerHTML = `
         <div class="lesson-center error-box">
-          <div style="font-size:30px;">⚠️</div>
+          <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
           <p style="font-weight:700;">${t('sg.couldntBuild')}</p>
           <p class="text-faint" style="font-size:12.5px;max-width:320px;">${escapeHtml(message)}</p>
           <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('rl.backToHome')}</button>
@@ -76,9 +76,9 @@
 
           <div class="chip-row" style="margin-bottom:16px;">
             <button class="chip${!libraryFilter ? ' active' : ''}" data-filter="">${t('sg.filterAll')}</button>
-            <button class="chip${libraryFilter === 'grammar' ? ' active' : ''}" data-filter="grammar">${TYPE_META.grammar.icon} ${t('sg.typeGrammar')}</button>
-            <button class="chip${libraryFilter === 'vocab_theme' ? ' active' : ''}" data-filter="vocab_theme">${TYPE_META.vocab_theme.icon} ${t('sg.typeVocab')}</button>
-            <button class="chip${libraryFilter === 'phrase_list' ? ' active' : ''}" data-filter="phrase_list">${TYPE_META.phrase_list.icon} ${t('sg.typePhrases')}</button>
+            <button class="chip${libraryFilter === 'grammar' ? ' active' : ''}" data-filter="grammar">${icon(TYPE_META.grammar.icon, { size: 13 })} ${t('sg.typeGrammar')}</button>
+            <button class="chip${libraryFilter === 'vocab_theme' ? ' active' : ''}" data-filter="vocab_theme">${icon(TYPE_META.vocab_theme.icon, { size: 13 })} ${t('sg.typeVocab')}</button>
+            <button class="chip${libraryFilter === 'phrase_list' ? ' active' : ''}" data-filter="phrase_list">${icon(TYPE_META.phrase_list.icon, { size: 13 })} ${t('sg.typePhrases')}</button>
           </div>
 
           <button class="btn-primary" id="newTopicBtn" style="width:100%;justify-content:center;margin-bottom:18px;">+ ${t('sg.newTopic')}</button>
@@ -88,7 +88,7 @@
               ${filtered.map(p => `
                 <button class="row-option" data-open="${p.id}" style="text-align:left;">
                   <div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;">
-                    <span style="font-weight:800;font-family:var(--font-display);font-size:15px;">${TYPE_META[p.page_type].icon} ${escapeHtml(p.topic)}</span>
+                    <span style="font-weight:800;font-family:var(--font-display);font-size:15px;">${icon(TYPE_META[p.page_type].icon, { size: 14 })} ${escapeHtml(p.topic)}</span>
                     <span class="text-faint" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(libraryPreview(p))}</span>
                   </div>
                   <span class="text-faint">→</span>
@@ -116,9 +116,9 @@
 
           <span class="label">${t('sg.pageType')}</span>
           <div class="chip-row" style="margin-bottom:18px;">
-            <button class="chip${newType === 'grammar' ? ' active' : ''}" data-type="grammar">${TYPE_META.grammar.icon} ${t('sg.typeGrammar')}</button>
-            <button class="chip${newType === 'vocab_theme' ? ' active' : ''}" data-type="vocab_theme">${TYPE_META.vocab_theme.icon} ${t('sg.typeVocab')}</button>
-            <button class="chip${newType === 'phrase_list' ? ' active' : ''}" data-type="phrase_list">${TYPE_META.phrase_list.icon} ${t('sg.typePhrases')}</button>
+            <button class="chip${newType === 'grammar' ? ' active' : ''}" data-type="grammar">${icon(TYPE_META.grammar.icon, { size: 13 })} ${t('sg.typeGrammar')}</button>
+            <button class="chip${newType === 'vocab_theme' ? ' active' : ''}" data-type="vocab_theme">${icon(TYPE_META.vocab_theme.icon, { size: 13 })} ${t('sg.typeVocab')}</button>
+            <button class="chip${newType === 'phrase_list' ? ' active' : ''}" data-type="phrase_list">${icon(TYPE_META.phrase_list.icon, { size: 13 })} ${t('sg.typePhrases')}</button>
           </div>
 
           <span class="label">${t('sg.topicLabel')}</span>
@@ -126,7 +126,7 @@
 
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button class="btn-primary" id="generateBtn" style="flex:1;justify-content:center;">${t('sg.generate')}</button>
-            <button class="btn-ghost" id="surpriseBtn">🎲 ${t('sg.surpriseMe')}</button>
+            <button class="btn-ghost" id="surpriseBtn">${icon('dice', { size: 14 })} ${t('sg.surpriseMe')}</button>
           </div>
         </div>`;
 
@@ -162,7 +162,7 @@
 
     // --- Page detail rendering ------------------------------------------
     function speakBtnHTML(text) {
-      return `<button class="icon-btn icon-btn-sm sg-speak" data-text="${encodeURIComponent(text)}">🔊</button>`;
+      return `<button class="icon-btn icon-btn-sm sg-speak" data-text="${encodeURIComponent(text)}">${icon('speaker', { size: 14 })}</button>`;
     }
 
     function wireSpeakButtons() {
@@ -174,7 +174,7 @@
 
     function pageHeaderHTML(pageType, title, subtitle) {
       return `
-        <span class="chip-mini">${TYPE_META[pageType].icon} ${t(TYPE_META[pageType].labelKey)}</span>
+        <span class="chip-mini">${icon(TYPE_META[pageType].icon, { size: 12 })} ${t(TYPE_META[pageType].labelKey)}</span>
         <h1 style="font-size:22px;font-family:var(--font-display);margin:8px 0 4px;">${escapeHtml(title)}</h1>
         ${subtitle ? `<p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${escapeHtml(subtitle)}</p>` : '<div style="margin-bottom:10px;"></div>'}`;
     }
@@ -220,7 +220,7 @@
           </div>` : ''}
         ${c.tip ? `
           <div class="card" style="margin-top:20px;background:var(--mint-soft);border-color:var(--mint);">
-            <p style="font-size:13px;"><b>💡 ${t('sg.tip')}:</b> <span class="text-dim">${escapeHtml(c.tip)}</span></p>
+            <p style="font-size:13px;"><b>${icon('bulb', { size: 13 })} ${t('sg.tip')}:</b> <span class="text-dim">${escapeHtml(c.tip)}</span></p>
           </div>` : ''}`;
     }
 
