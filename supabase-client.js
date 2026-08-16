@@ -17,6 +17,7 @@ const GENERATE_EXTENSIVE_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-ex
 const LEVEL_TEST_COACH_URL = SUPABASE_URL + "/functions/v1/level-test-coach";
 const GENERATE_COACH_CHECKIN_URL = SUPABASE_URL + "/functions/v1/generate-coach-checkin";
 const GENERATE_VOCAB_EXAMPLE_URL = SUPABASE_URL + "/functions/v1/generate-vocab-example";
+const LOOKUP_WORD_URL = SUPABASE_URL + "/functions/v1/lookup-word";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -841,6 +842,55 @@ async function getOrCreateVocabExample(vocabItem, targetLanguage, nativeLanguage
     }
   } catch (e) { /* best-effort — card still works without an example */ }
   return { exampleTarget: null, exampleNative: null };
+}
+
+// Powers reading.html's Storybook mode (tap any word for a lookup card).
+// Finds an existing vocab_items row for this exact word first (case-
+// insensitive — same matching style as pronunciation_mistakes) so the same
+// word tapped again later, in this passage or a different one, is free and
+// instant. Otherwise calls lookup-word once and persists a fresh row,
+// which doubles as free content for vocab.html's avoid-list (tapped words
+// won't get redundantly re-taught in a freshly generated batch).
+//
+// Returns { vocabItemId, translation, phonetic } — vocabItemId is what the
+// caller passes to recordSkillResult if the learner taps "Learn". Merely
+// looking a word up (even if they tap "I know it") does NOT touch
+// skill_mastery — only an explicit "Learn" tap enters it into the Huddle Up
+// mistake-review pipeline.
+async function getOrCreateWordLookup(word, sentenceContext, targetLanguage, nativeLanguage, level) {
+  const { data: existing } = await db.from('vocab_items').select('*')
+    .eq('target_language', targetLanguage).ilike('target_text', word).limit(1).maybeSingle();
+  if (existing && existing.phonetic) {
+    return { vocabItemId: existing.id, translation: existing.native_text, phonetic: existing.phonetic };
+  }
+
+  try {
+    const token = await getAuthToken();
+    const res = await fetch(LOOKUP_WORD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ word, sentenceContext, targetLanguage, nativeLanguage, level }),
+    });
+    const data = JSON.parse(await res.text());
+    if (!res.ok || data.error || !data.translation) throw new Error(data.error || 'lookup failed');
+
+    if (existing) {
+      await db.from('vocab_items').update({ phonetic: data.phonetic || null }).eq('id', existing.id);
+      return { vocabItemId: existing.id, translation: existing.native_text, phonetic: data.phonetic || null };
+    }
+    const { data: row } = await db.from('vocab_items').insert({
+      target_language: targetLanguage, native_language: nativeLanguage,
+      target_text: word, native_text: data.translation, level: level || 'A2',
+      tags: [], example_target: sentenceContext || null,
+      phonetic: data.phonetic || null,
+    }).select('id').single();
+    return { vocabItemId: row ? row.id : null, translation: data.translation, phonetic: data.phonetic || null };
+  } catch (e) {
+    // Best-effort — if the existing row (without phonetic) is all we have,
+    // still let the learner see the translation; otherwise surface nothing.
+    if (existing) return { vocabItemId: existing.id, translation: existing.native_text, phonetic: null };
+    return { vocabItemId: null, translation: null, phonetic: null };
+  }
 }
 
 // Shared by lesson.html's dialogue quiz, translate.html, and input.html's

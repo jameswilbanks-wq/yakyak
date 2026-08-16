@@ -34,6 +34,12 @@
     const READING_RATE = { normal: 0.95, slow: 0.6 };
     let speed = localStorage.getItem('yakyak_reading_speed') || 'normal';
     let translationOn = localStorage.getItem('yakyak_reading_translation') === '1';
+    // 'guided' = the original sentence-by-sentence, chunk-aligned, read-along
+    // mode. 'storybook' = continuous-paragraph, tap-any-word-to-look-it-up
+    // mode, styled like a real book (own AI-generated passages, not real
+    // copyrighted books). Same underlying passage data either way — the
+    // toggle just switches how it's rendered.
+    let mode = localStorage.getItem('yakyak_reading_mode') || 'guided';
     let isPlaying = false;
     let stopRequested = false;
 
@@ -177,7 +183,38 @@
       step(0);
     }
 
+    // Dispatches to whichever mode is active. Both modes share the exact
+    // same loaded `passage` — switching the toggle just re-renders, it
+    // never re-fetches.
     function renderPassage() {
+      stopPlayback();
+      if (mode === 'storybook') renderStorybook(); else renderGuided();
+    }
+
+    function modeToggleHTML() {
+      return `
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <button class="chip${mode === 'guided' ? ' active' : ''}" id="modeGuidedBtn" style="padding:4px 10px;font-size:12px;">${t('rl.guided')}</button>
+          <button class="chip${mode === 'storybook' ? ' active' : ''}" id="modeStorybookBtn" style="padding:4px 10px;font-size:12px;">${t('rl.storybook')}</button>
+        </div>`;
+    }
+
+    function wireModeToggle() {
+      document.getElementById('modeGuidedBtn').addEventListener('click', () => {
+        if (mode === 'guided') return;
+        mode = 'guided';
+        localStorage.setItem('yakyak_reading_mode', mode);
+        renderPassage();
+      });
+      document.getElementById('modeStorybookBtn').addEventListener('click', () => {
+        if (mode === 'storybook') return;
+        mode = 'storybook';
+        localStorage.setItem('yakyak_reading_mode', mode);
+        renderPassage();
+      });
+    }
+
+    function renderGuided() {
       document.getElementById('topLabel').textContent = t('rl.freeReading');
       const sentencesHTML = passage.sentences.map((s, i) => {
         const { targetHTML, nativeHTML } = sentenceToChunkedSpansHTML(s.chunks || [], i);
@@ -194,6 +231,7 @@
 
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-body">
+          ${modeToggleHTML()}
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
             <button class="btn-ghost" id="playAllBtn" style="padding:6px 12px;">▶ ${t('rl.playAll')}</button>
             <button class="chip${speed === 'normal' ? ' active' : ''}" data-speed="normal" style="padding:4px 10px;font-size:12px;">${t('rl.speedNormal')}</button>
@@ -214,18 +252,19 @@
         </div>`;
 
       updatePlayButtonLabel();
+      wireModeToggle();
       document.getElementById('playAllBtn').addEventListener('click', () => { isPlaying ? stopPlayback() : playAll(); });
       document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => {
         speed = b.dataset.speed;
         localStorage.setItem('yakyak_reading_speed', speed);
         stopPlayback();
-        renderPassage();
+        renderGuided();
       }));
       document.getElementById('translationToggle').addEventListener('click', () => {
         translationOn = !translationOn;
         localStorage.setItem('yakyak_reading_translation', translationOn ? '1' : '0');
         stopPlayback();
-        renderPassage();
+        renderGuided();
       });
       document.querySelectorAll('.rl-sentence-play').forEach(b => b.addEventListener('click', () => {
         stopPlayback();
@@ -233,6 +272,101 @@
       }));
       document.getElementById('doneReadingBtn').addEventListener('click', () => { stopPlayback(); startQuestions(); });
       wireChunkHover();
+    }
+
+    // --- Storybook mode: continuous paragraphs, tap any word to look it up ---
+    // Same passage.sentences data as Guided mode, just flowed together as
+    // prose instead of one row per sentence, with no chunk-hover/translation
+    // controls — the point is to read like a real book. Every word is its
+    // own tappable span; tapping opens a lookup card (translation +
+    // phonetic + audio) via getOrCreateWordLookup, with "I know it" (just
+    // dismiss) and "Learn →" (adds it to the same skill_mastery mistake
+    // queue Huddle Up reviews) actions.
+    function sentenceToTapSpansHTML(text, sIdx) {
+      let html = '';
+      let last = 0;
+      const regex = /[\p{L}\p{M}'’-]+/gu;
+      let m;
+      while ((m = regex.exec(text))) {
+        html += escapeHtml(text.slice(last, m.index));
+        html += `<span class="sb-word" data-word="${escapeHtml(m[0])}" data-sidx="${sIdx}">${escapeHtml(m[0])}</span>`;
+        last = m.index + m[0].length;
+      }
+      html += escapeHtml(text.slice(last));
+      return html;
+    }
+
+    function renderStorybook() {
+      document.getElementById('topLabel').textContent = t('rl.storybook');
+      const proseHTML = passage.sentences.map((s, i) => {
+        const spaced = (s.newParagraph && i > 0) ? '</p><p style="margin-top:14px;">' : ' ';
+        return (i === 0 ? '' : spaced) + sentenceToTapSpansHTML(s.target, i);
+      }).join('');
+
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          ${modeToggleHTML()}
+          <p class="text-faint" style="font-size:11px;margin-bottom:14px;">${t('rl.tapHint')}</p>
+          <div class="card" style="text-align:center;padding:22px 20px;margin-bottom:14px;">
+            <h1 style="font-size:20px;font-family:var(--font-display);">${passage.title}</h1>
+            <p class="text-faint" style="font-size:11.5px;margin-top:6px;">${t('rl.freeReading')}</p>
+          </div>
+          <div class="card" style="font-size:16px;line-height:2;font-family:var(--font-display);">
+            <p>${proseHTML}</p>
+          </div>
+          <button class="btn-primary" id="doneReadingBtn" style="margin-top:20px;width:100%;justify-content:center;">${t('rl.doneReading')}</button>
+        </div>`;
+
+      wireModeToggle();
+      document.querySelectorAll('.sb-word').forEach(el => el.addEventListener('click', () => {
+        const sIdx = parseInt(el.dataset.sidx, 10);
+        openWordLookup(el.dataset.word, passage.sentences[sIdx] ? passage.sentences[sIdx].target : '');
+      }));
+      document.getElementById('doneReadingBtn').addEventListener('click', () => { startQuestions(); });
+    }
+
+    function openWordLookup(word, sentenceContext) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-card" style="max-width:320px;text-align:center;">
+          <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+            <h2 style="font-size:22px;font-family:var(--font-display);">${escapeHtml(word)}</h2>
+            <button class="icon-btn icon-btn-sm" id="wordAudioBtn">🔊</button>
+          </div>
+          <p class="text-faint" id="wordPhonetic" style="font-size:13px;margin-top:4px;min-height:16px;">${t('rl.lookingUp')}</p>
+          <p class="text-dim" id="wordTranslation" style="font-size:15px;margin-top:12px;font-weight:600;min-height:20px;"></p>
+          <div style="display:flex;gap:10px;margin-top:20px;" id="wordActions">
+            <button class="row-option" id="wordKnowBtn" style="justify-content:center;" disabled><span>${t('rl.iKnowIt')}</span></button>
+            <button class="row-option" id="wordLearnBtn" style="border-color:var(--mint);justify-content:center;" disabled><span style="color:var(--mint);font-weight:700;">${t('rl.learnWord')}</span></button>
+          </div>
+          <div id="wordToast" style="margin-top:10px;font-size:12.5px;color:var(--mint);"></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+      document.getElementById('wordAudioBtn').addEventListener('click', () => speak(word, langByCode(profile.target_language).tts));
+
+      let vocabItemId = null;
+      (async () => {
+        const result = await getOrCreateWordLookup(
+          word, sentenceContext, langByCode(profile.target_language).name, profile.native_language, profile.current_level
+        );
+        vocabItemId = result.vocabItemId;
+        if (!overlay.isConnected) return; // closed before the lookup finished
+        document.getElementById('wordPhonetic').textContent = result.phonetic || '';
+        document.getElementById('wordTranslation').textContent = result.translation || '—';
+        document.getElementById('wordKnowBtn').disabled = false;
+        document.getElementById('wordLearnBtn').disabled = false;
+      })();
+
+      document.getElementById('wordKnowBtn').addEventListener('click', () => overlay.remove());
+      document.getElementById('wordLearnBtn').addEventListener('click', async () => {
+        if (!vocabItemId) { overlay.remove(); return; }
+        document.getElementById('wordLearnBtn').disabled = true;
+        await recordSkillResult(user.id, 'vocab', vocabItemId, false);
+        document.getElementById('wordToast').textContent = t('rl.addedToReview');
+        setTimeout(() => overlay.remove(), 900);
+      });
     }
 
     function startQuestions() {
