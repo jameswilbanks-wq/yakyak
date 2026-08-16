@@ -18,6 +18,7 @@ const LEVEL_TEST_COACH_URL = SUPABASE_URL + "/functions/v1/level-test-coach";
 const GENERATE_COACH_CHECKIN_URL = SUPABASE_URL + "/functions/v1/generate-coach-checkin";
 const GENERATE_VOCAB_EXAMPLE_URL = SUPABASE_URL + "/functions/v1/generate-vocab-example";
 const LOOKUP_WORD_URL = SUPABASE_URL + "/functions/v1/lookup-word";
+const GENERATE_STUDY_GUIDE_PAGE_URL = SUPABASE_URL + "/functions/v1/generate-study-guide-page";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -891,6 +892,74 @@ async function getOrCreateWordLookup(word, sentenceContext, targetLanguage, nati
     if (existing) return { vocabItemId: existing.id, translation: existing.native_text, phonetic: null };
     return { vocabItemId: null, translation: null, phonetic: null };
   }
+}
+
+// --- Study Guide (study-guide.html) --------------------------------------
+// A "classroom/textbook" reference section, distinct from every other
+// module (which are all interactive quizzes/drills). Pages are meant to be
+// a STABLE reference, not fresh-every-time content — the same topic always
+// returns the same page, found-or-created once and cached forever in
+// study_guide_pages (shared across all learners of a target language, same
+// as vocab_items/reading_passages).
+
+function slugifyTopic(topic) {
+  return String(topic).trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+}
+
+// Pass an empty/null topic to let the model pick one itself (the "Surprise
+// me" flow) — the resolved topic comes back either way. Checks for an
+// existing page by topic before AND after generating (the model can land on
+// a topic name that already exists under the exact same slug), so repeat
+// taps on "Surprise me" don't pile up near-duplicate pages.
+async function getOrCreateStudyGuidePage(pageType, topic, targetLanguage, nativeLanguage, level) {
+  if (topic) {
+    const topicKey = slugifyTopic(topic);
+    const { data: existing } = await db.from('study_guide_pages').select('*')
+      .eq('target_language', targetLanguage).eq('page_type', pageType).eq('topic_key', topicKey).maybeSingle();
+    if (existing) return { id: existing.id, topic: existing.topic, content: existing.content, isNew: false };
+  }
+
+  const avoid = topic ? [] : await fetchRecentValues('study_guide_pages', 'topic', targetLanguage, level, 20);
+  const token = await getAuthToken();
+  const res = await fetch(GENERATE_STUDY_GUIDE_PAGE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ pageType, topic: topic || null, targetLanguage, nativeLanguage, level, avoid }),
+  });
+  const raw = await res.text();
+  const data = JSON.parse(raw);
+  if (!res.ok || data.error || !data.content || !data.topic) throw new Error(data.error || 'Could not generate page');
+
+  const resolvedTopic = data.topic;
+  const topicKey = slugifyTopic(resolvedTopic);
+
+  const { data: existingAfter } = await db.from('study_guide_pages').select('*')
+    .eq('target_language', targetLanguage).eq('page_type', pageType).eq('topic_key', topicKey).maybeSingle();
+  if (existingAfter) return { id: existingAfter.id, topic: existingAfter.topic, content: existingAfter.content, isNew: false };
+
+  const { data: row, error } = await db.from('study_guide_pages').insert({
+    target_language: targetLanguage, native_language: nativeLanguage, level: level || 'A2',
+    page_type: pageType, topic: resolvedTopic, topic_key: topicKey, content: data.content,
+  }).select('*').single();
+  if (error) {
+    // Unique-index race (another tab/user inserted the same topic between
+    // our check and our insert) — just fetch what won rather than erroring.
+    const { data: race } = await db.from('study_guide_pages').select('*')
+      .eq('target_language', targetLanguage).eq('page_type', pageType).eq('topic_key', topicKey).maybeSingle();
+    if (race) return { id: race.id, topic: race.topic, content: race.content, isNew: false };
+    throw error;
+  }
+  return { id: row.id, topic: row.topic, content: row.content, isNew: true };
+}
+
+// Library browsing — recent pages for this target language, newest first,
+// optionally filtered to one page_type ('grammar'|'vocab_theme'|'phrase_list', or null for all).
+async function fetchStudyGuideLibrary(targetLanguage, pageType, limit) {
+  let q = db.from('study_guide_pages').select('id, page_type, topic, content, created_at')
+    .eq('target_language', targetLanguage).order('created_at', { ascending: false }).limit(limit || 40);
+  if (pageType) q = q.eq('page_type', pageType);
+  const { data } = await q;
+  return data || [];
 }
 
 // Shared by lesson.html's dialogue quiz, translate.html, and input.html's
