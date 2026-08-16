@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YakYak — Study Guide</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="lesson-wrap">
+    <div class="lesson-top">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="mascot" style="width:20px;height:20px;">
+          <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
+          <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
+        </div>
+        <button class="icon-btn" id="exitBtn">✕</button>
+      </div>
+      <span class="text-faint" id="topLabel" style="font-size:12.5px;"></span>
+    </div>
+    <div id="sgBody"></div>
+  </div>
+
+  <script src="supabase-client.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    let user = null, profile = null, library = [], libraryFilter = null, newType = 'grammar';
+
+    const TYPE_META = {
+      grammar: { icon: '📐', labelKey: 'sg.typeGrammar' },
+      vocab_theme: { icon: '🛍️', labelKey: 'sg.typeVocab' },
+      phrase_list: { icon: '💬', labelKey: 'sg.typePhrases' },
+    };
+
+    function renderLoading() {
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('sgBody').innerHTML = `
+        <div class="lesson-center">
+          <div id="mascotSlot" style="width:52px;"></div>
+          <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('sg.building')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+    }
+
+    function renderError(message) {
+      document.getElementById('sgBody').innerHTML = `
+        <div class="lesson-center error-box">
+          <div style="font-size:30px;">⚠️</div>
+          <p style="font-weight:700;">${t('sg.couldntBuild')}</p>
+          <p class="text-faint" style="font-size:12.5px;max-width:320px;">${escapeHtml(message)}</p>
+          <button class="btn-primary" id="retryBtn" style="margin-top:8px;">${t('rl.backToHome')}</button>
+        </div>`;
+      document.getElementById('retryBtn').addEventListener('click', () => { window.location.href = 'study-guide.html'; });
+    }
+
+    // --- Library: browse everything already generated for this language ---
+    async function renderLibrary() {
+      document.getElementById('topLabel').textContent = t('sg.title');
+      renderLoading();
+      library = await fetchStudyGuideLibrary(profile.target_language, null, 60);
+      renderLibraryList();
+    }
+
+    function libraryPreview(page) {
+      const c = page.content || {};
+      return c.subtitle || (page.page_type === 'grammar' ? (c.explanation || '') : '');
+    }
+
+    function renderLibraryList() {
+      const filtered = libraryFilter ? library.filter(p => p.page_type === libraryFilter) : library;
+      document.getElementById('sgBody').innerHTML = `
+        <div class="lesson-body">
+          <h1 style="font-size:22px;margin-bottom:4px;">${t('sg.title')}</h1>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:16px;">${t('sg.subtitle')}</p>
+
+          <div class="chip-row" style="margin-bottom:16px;">
+            <button class="chip${!libraryFilter ? ' active' : ''}" data-filter="">${t('sg.filterAll')}</button>
+            <button class="chip${libraryFilter === 'grammar' ? ' active' : ''}" data-filter="grammar">${TYPE_META.grammar.icon} ${t('sg.typeGrammar')}</button>
+            <button class="chip${libraryFilter === 'vocab_theme' ? ' active' : ''}" data-filter="vocab_theme">${TYPE_META.vocab_theme.icon} ${t('sg.typeVocab')}</button>
+            <button class="chip${libraryFilter === 'phrase_list' ? ' active' : ''}" data-filter="phrase_list">${TYPE_META.phrase_list.icon} ${t('sg.typePhrases')}</button>
+          </div>
+
+          <button class="btn-primary" id="newTopicBtn" style="width:100%;justify-content:center;margin-bottom:18px;">+ ${t('sg.newTopic')}</button>
+
+          ${filtered.length ? `
+            <div style="display:flex;flex-direction:column;gap:10px;" id="libraryList">
+              ${filtered.map(p => `
+                <button class="row-option" data-open="${p.id}" style="text-align:left;">
+                  <div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;">
+                    <span style="font-weight:800;font-family:var(--font-display);font-size:15px;">${TYPE_META[p.page_type].icon} ${escapeHtml(p.topic)}</span>
+                    <span class="text-faint" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(libraryPreview(p))}</span>
+                  </div>
+                  <span class="text-faint">→</span>
+                </button>`).join('')}
+            </div>` : `
+            <div class="lesson-center" style="padding:30px 10px;">
+              <p class="text-dim" style="font-size:13.5px;">${t('sg.empty')}</p>
+            </div>`}
+        </div>`;
+
+      document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
+        libraryFilter = b.dataset.filter || null;
+        renderLibraryList();
+      }));
+      document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openById(b.dataset.open)));
+      document.getElementById('newTopicBtn').addEventListener('click', renderNewTopicForm);
+    }
+
+    // --- "+ New Topic" create flow ---
+    function renderNewTopicForm() {
+      document.getElementById('topLabel').textContent = t('sg.newTopic');
+      document.getElementById('sgBody').innerHTML = `
+        <div class="lesson-body">
+          <h1 style="font-size:20px;margin-bottom:14px;">${t('sg.newTopic')}</h1>
+
+          <span class="label">${t('sg.pageType')}</span>
+          <div class="chip-row" style="margin-bottom:18px;">
+            <button class="chip${newType === 'grammar' ? ' active' : ''}" data-type="grammar">${TYPE_META.grammar.icon} ${t('sg.typeGrammar')}</button>
+            <button class="chip${newType === 'vocab_theme' ? ' active' : ''}" data-type="vocab_theme">${TYPE_META.vocab_theme.icon} ${t('sg.typeVocab')}</button>
+            <button class="chip${newType === 'phrase_list' ? ' active' : ''}" data-type="phrase_list">${TYPE_META.phrase_list.icon} ${t('sg.typePhrases')}</button>
+          </div>
+
+          <span class="label">${t('sg.topicLabel')}</span>
+          <input class="input" id="topicInput" placeholder="${t('sg.topicPlaceholder')}" style="margin-bottom:14px;">
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn-primary" id="generateBtn" style="flex:1;justify-content:center;">${t('sg.generate')}</button>
+            <button class="btn-ghost" id="surpriseBtn">🎲 ${t('sg.surpriseMe')}</button>
+          </div>
+        </div>`;
+
+      document.querySelectorAll('[data-type]').forEach(b => b.addEventListener('click', () => {
+        newType = b.dataset.type;
+        renderNewTopicForm();
+        document.getElementById('topicInput').focus();
+      }));
+      document.getElementById('generateBtn').addEventListener('click', () => {
+        const topic = document.getElementById('topicInput').value.trim();
+        generateAndOpen(newType, topic || null);
+      });
+      document.getElementById('surpriseBtn').addEventListener('click', () => generateAndOpen(newType, null));
+    }
+
+    async function generateAndOpen(pageType, topic) {
+      renderLoading();
+      try {
+        const learning = langByCode(profile.target_language);
+        const result = await getOrCreateStudyGuidePage(pageType, topic, profile.target_language, profile.native_language, profile.current_level);
+        renderPage(pageType, result);
+      } catch (e) {
+        renderError(e.message || 'Unknown error');
+      }
+    }
+
+    async function openById(id) {
+      renderLoading();
+      const { data: row } = await db.from('study_guide_pages').select('*').eq('id', id).maybeSingle();
+      if (!row) { renderError('Page not found'); return; }
+      renderPage(row.page_type, { id: row.id, topic: row.topic, content: row.content });
+    }
+
+    // --- Page detail rendering ------------------------------------------
+    function speakBtnHTML(text) {
+      return `<button class="icon-btn icon-btn-sm sg-speak" data-text="${encodeURIComponent(text)}">🔊</button>`;
+    }
+
+    function wireSpeakButtons() {
+      const tts = langByCode(profile.target_language).tts;
+      document.querySelectorAll('.sg-speak').forEach(b => b.addEventListener('click', () => {
+        speak(decodeURIComponent(b.dataset.text), tts);
+      }));
+    }
+
+    function pageHeaderHTML(pageType, title, subtitle) {
+      return `
+        <span class="chip-mini">${TYPE_META[pageType].icon} ${t(TYPE_META[pageType].labelKey)}</span>
+        <h1 style="font-size:22px;font-family:var(--font-display);margin:8px 0 4px;">${escapeHtml(title)}</h1>
+        ${subtitle ? `<p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${escapeHtml(subtitle)}</p>` : '<div style="margin-bottom:10px;"></div>'}`;
+    }
+
+    function grammarPageHTML(c) {
+      const columns = c.columns || [];
+      return `
+        ${c.explanation ? `<p class="text-dim" style="font-size:14px;line-height:1.6;margin-bottom:18px;">${escapeHtml(c.explanation)}</p>` : ''}
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          ${columns.map((col, ci) => `
+            <div class="card" style="flex:1;min-width:240px;padding:0;overflow:hidden;">
+              <div style="padding:12px 16px;background:${ci === 0 ? 'var(--accent-soft)' : 'var(--mint-soft)'};color:${ci === 0 ? 'var(--accent-ink)' : 'var(--mint)'};font-weight:800;font-family:var(--font-display);font-size:14px;">${escapeHtml(col.label || '')}</div>
+              <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px;">
+                ${(col.rows || []).map(r => `
+                  <div>
+                    <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;margin-bottom:2px;">${escapeHtml(r.category || '')}</div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <span style="font-weight:700;font-family:var(--font-display);font-size:14.5px;">${escapeHtml(r.example || '')}</span>
+                      ${speakBtnHTML(r.example || '')}
+                    </div>
+                    <div class="text-dim" style="font-size:12.5px;">${escapeHtml(r.translation || '')}</div>
+                  </div>`).join('')}
+              </div>
+            </div>`).join('')}
+        </div>
+        ${(c.trickyPairs && c.trickyPairs.length) ? `
+          <div style="margin-top:20px;">
+            <span class="label">${t('sg.trickyPairs')}</span>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              ${c.trickyPairs.map(p => `
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div class="card" style="flex:1;padding:12px 14px;">
+                    <div style="font-weight:700;font-family:var(--font-display);font-size:14px;">${escapeHtml(p.left || '')}</div>
+                    <div class="text-faint" style="font-size:11.5px;">${escapeHtml(p.leftMeaning || '')}</div>
+                  </div>
+                  <span class="text-faint" style="font-size:11px;font-weight:800;">${t('sg.vs')}</span>
+                  <div class="card" style="flex:1;padding:12px 14px;">
+                    <div style="font-weight:700;font-family:var(--font-display);font-size:14px;">${escapeHtml(p.right || '')}</div>
+                    <div class="text-faint" style="font-size:11.5px;">${escapeHtml(p.rightMeaning || '')}</div>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>` : ''}
+        ${c.tip ? `
+          <div class="card" style="margin-top:20px;background:var(--mint-soft);border-color:var(--mint);">
+            <p style="font-size:13px;"><b>💡 ${t('sg.tip')}:</b> <span class="text-dim">${escapeHtml(c.tip)}</span></p>
+          </div>` : ''}`;
+    }
+
+    function vocabThemePageHTML(c) {
+      const words = c.words || [];
+      const phrases = c.phrases || [];
+      return `
+        ${c.subtitle ? '' : ''}
+        <div class="card">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+            ${words.map(w => `
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;">
+                  <span style="font-weight:700;font-family:var(--font-display);font-size:14px;">${escapeHtml(w.target || '')}</span>
+                  ${speakBtnHTML(w.target || '')}
+                </div>
+                <div class="text-faint" style="font-size:12px;">${escapeHtml(w.native || '')}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+        ${phrases.length ? `
+          <div style="margin-top:18px;">
+            <span class="label">${t('sg.usefulPhrases')}</span>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              ${phrases.map(p => `
+                <div class="card" style="padding:12px 14px;">
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="font-weight:700;font-family:var(--font-display);font-size:14px;">${escapeHtml(p.target || '')}</span>
+                    ${speakBtnHTML(p.target || '')}
+                  </div>
+                  <div class="text-dim" style="font-size:12.5px;">${escapeHtml(p.native || '')}</div>
+                </div>`).join('')}
+            </div>
+          </div>` : ''}`;
+    }
+
+    function phraseListPageHTML(c) {
+      const phrases = c.phrases || [];
+      return `
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${phrases.map((p, i) => `
+            <div class="card" style="padding:12px 14px;display:flex;align-items:center;gap:12px;">
+              <span class="badge">${i + 1}</span>
+              <div style="flex:1;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="font-weight:700;font-family:var(--font-display);font-size:14.5px;">${escapeHtml(p.target || '')}</span>
+                  ${speakBtnHTML(p.target || '')}
+                </div>
+                <div class="text-dim" style="font-size:12.5px;">${escapeHtml(p.native || '')}</div>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }
+
+    function renderPage(pageType, page) {
+      const c = page.content || {};
+      document.getElementById('topLabel').textContent = t(TYPE_META[pageType].labelKey);
+      let bodyHTML = '';
+      if (pageType === 'grammar') bodyHTML = grammarPageHTML(c);
+      else if (pageType === 'vocab_theme') bodyHTML = vocabThemePageHTML(c);
+      else bodyHTML = phraseListPageHTML(c);
+
+      document.getElementById('sgBody').innerHTML = `
+        <div class="lesson-body">
+          <button class="btn-ghost" id="toLibraryBtn" style="padding-left:0;margin-bottom:6px;">← ${t('sg.library')}</button>
+          ${pageHeaderHTML(pageType, c.title || page.topic, c.subtitle)}
+          ${bodyHTML}
+        </div>`;
+
+      document.getElementById('toLibraryBtn').addEventListener('click', renderLibrary);
+      wireSpeakButtons();
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+    (async () => {
+      user = await requireAuth();
+      if (!user) return;
+      profile = await getProfile(user.id);
+      if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
+      setLocale(profile.native_language);
+
+      const params = new URLSearchParams(window.location.search);
+      const openId = params.get('id');
+      const openTopic = params.get('topic');
+      const openType = params.get('type');
+
+      if (openId) {
+        openById(openId);
+      } else if (openTopic && openType) {
+        renderLoading();
+        try {
+          const result = await getOrCreateStudyGuidePage(openType, openTopic, profile.target_language, profile.native_language, profile.current_level);
+          renderPage(openType, result);
+        } catch (e) {
+          renderError(e.message || 'Unknown error');
+        }
+      } else {
+        renderLibrary();
+      }
+    })();
+  </script>
+</body>
+</html>

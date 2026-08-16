@@ -328,6 +328,13 @@
         </div>
 
         <div class="card" style="margin-top:14px;">
+          <span class="chip-mini">📐 ${t('db.studyGuideChip')}</span>
+          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.studyGuideTitle')}</h2>
+          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.studyGuideDesc', { lang: langDisplay(learning.code) })}</p>
+          <button class="btn-primary" id="startStudyGuideBtn">${t('db.startStudyGuide')}</button>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
             <span class="label" style="margin-bottom:0;">${t('db.yourPath')}</span>
             <span class="text-faint" style="font-size:11px;">${t('db.lessonsCompleted', { n: completionCount || 0 })}</span>
@@ -340,6 +347,7 @@
       document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
       document.getElementById('startReadingBtn').addEventListener('click', () => { window.location.href = 'reading.html'; });
       document.getElementById('startVocabBtn').addEventListener('click', () => { window.location.href = 'vocab.html'; });
+      document.getElementById('startStudyGuideBtn').addEventListener('click', () => { window.location.href = 'study-guide.html'; });
       renderLadder(document.getElementById('ladderSlot'), {
         mode: 'display', current: profile.current_level, target: profile.target_level, compact: true, progress: 40,
       });
