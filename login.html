@@ -46,7 +46,7 @@
   <script>
     document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
 
-    let mode = 'signin'; // or 'signup'
+    let mode = new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'signin';
     const emailEl = document.getElementById('email');
     const passwordEl = document.getElementById('password');
     const formError = document.getElementById('formError');
