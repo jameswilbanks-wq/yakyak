@@ -48,6 +48,17 @@
     let readerOn = localStorage.getItem('yakyak_reading_reader') !== '0';
     let isPlaying = false;
     let stopRequested = false;
+    // Bumped every time a fresh playAll()/playStoryAll() run starts. A
+    // switch between Guided <-> Storybook mid-playback calls stopPlayback()
+    // (which cancels speech) then immediately kicks off the other mode's
+    // own play loop. speechSynthesis.cancel() fires the *old* utterance's
+    // onend asynchronously, so the old loop's step() can still resolve
+    // after the new loop already reset stopRequested — without this token,
+    // that stale callback wrongly stomps isPlaying back to false right
+    // after the new narration has actually started. Each step() closure
+    // captures the session id it was created with and no-ops if a newer
+    // session has since started.
+    let playSession = 0;
 
     function renderLoading() {
       document.getElementById('readingBody').innerHTML = `
@@ -181,8 +192,10 @@
     function playAll() {
       isPlaying = true;
       stopRequested = false;
+      const session = ++playSession;
       updatePlayButtonLabel();
       const step = (idx) => {
+        if (session !== playSession) return;
         if (stopRequested || idx >= passage.sentences.length) { isPlaying = false; stopRequested = false; updatePlayButtonLabel(); return; }
         playSentence(idx, () => step(idx + 1));
       };
@@ -338,8 +351,10 @@
     function playStoryAll() {
       isPlaying = true;
       stopRequested = false;
+      const session = ++playSession;
       updatePlayButtonLabel();
       const step = (idx) => {
+        if (session !== playSession) return;
         if (stopRequested || idx >= passage.sentences.length) { isPlaying = false; stopRequested = false; updatePlayButtonLabel(); return; }
         playStorySentence(idx, () => step(idx + 1));
       };
