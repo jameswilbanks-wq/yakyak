@@ -480,7 +480,7 @@
       document.getElementById('ltBody').innerHTML = `
         <div class="lesson-body">
           <div class="lesson-center" style="padding:10px 0 20px;">
-            <div style="color:${passed ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(passed ? 'confetti' : 'bicep', { size: 40 })}</div>
+            <div style="color:${passed ? 'var(--mint)' : 'var(--dark)'};">${icon(passed ? 'confetti' : 'bicep', { size: 40 })}</div>
             <h1 style="font-size:23px;margin-top:8px;">${passed ? t('lvt.resultsTitlePass') : t('lvt.resultsTitleFail')}</h1>
             <p class="text-dim" style="font-size:14px;margin-top:4px;">${t('lvt.resultsScore', { n: overallScore })} · ${t('lvt.passNeeded')}</p>
           </div>

@@ -226,7 +226,7 @@
       document.getElementById('lessonTitle').textContent = '';
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:${correct === total ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(correct === total ? 'confetti' : 'pencil', { size: 40 })}</div>
+          <div style="color:${correct === total ? 'var(--mint)' : 'var(--dark)'};">${icon(correct === total ? 'confetti' : 'pencil', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${correct === total ? t('ls.perfect') : t('ls.almostThere')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('ls.correctOfTotal', { c: correct, t: total })}</p>
           ${missed.length ? `
@@ -284,7 +284,7 @@
       document.getElementById('lessonTitle').textContent = '';
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:var(--accent-ink);">${icon('trophy', { size: 40 })}</div>
+          <div style="color:var(--dark);">${icon('trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('ls.lessonComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${t('ls.correctOfTotal', { c: correctCount, t: lesson.quiz.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>

@@ -399,7 +399,7 @@
       document.getElementById('topLabel').textContent = '';
       document.getElementById('reviewBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:var(--accent-ink);">${icon('trophy', { size: 40 })}</div>
+          <div style="color:var(--dark);">${icon('trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rv.reviewDone')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rv.rememberedOfTotal', { c: correctCount, t: reviewedCount, xp: xpEarned })}</p>
           ${gradCount ? `<p class="text-dim" style="font-size:13px;margin-top:4px;">${t('rv.gradCount', { n: gradCount })}</p>` : ''}

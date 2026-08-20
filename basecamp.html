@@ -71,7 +71,7 @@
           </div>
 
           <a href="evolution.html" class="card" style="margin-top:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);">
-            <div style="color:var(--accent-ink);">${icon('yak', { size: 24 })}</div>
+            <span class="icon-square sm">${icon('yak', { size: 18 })}</span>
             <div style="flex:1;">
               <div style="font-weight:800;font-size:14px;">${t('ev.cardTitle')}</div>
               <div class="text-faint" style="font-size:12px;margin-top:2px;">${t('ev.cardDesc')}</div>
@@ -94,7 +94,7 @@
             <div class="text-faint" style="font-size:11.5px;margin-top:2px;">${langByCode(p.target_language).name} · ${p.current_level} · ${icon('flame', { size: 12 })} ${p.streak} · ${icon('medal', { size: 12 })} ${p.badgeCount}</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-weight:800;font-size:15px;color:var(--accent-ink);">${icon('sparkle', { size: 13 })} ${metricFor(p)}</div>
+            <div style="font-weight:800;font-size:15px;color:var(--dark);">${icon('sparkle', { size: 13 })} ${metricFor(p)}</div>
             ${p.id !== user.id ? `<button class="btn-ghost" data-cheer="${p.id}" style="margin-top:4px;font-size:12px;padding:6px 10px;">${cheeredIds.has(p.id) ? t('bc.cheered') : icon('handshake', { size: 13 }) + ' ' + t('bc.cheerBtn')}</button>` : ''}
           </div>
         </div>`).join('');

@@ -412,7 +412,7 @@
       document.getElementById('topLabel').textContent = '';
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:${correctCount === results.length ? 'var(--mint)' : 'var(--accent-ink)'};">${icon(correctCount === results.length ? 'confetti' : 'book', { size: 40 })}</div>
+          <div style="color:${correctCount === results.length ? 'var(--mint)' : 'var(--dark)'};">${icon(correctCount === results.length ? 'confetti' : 'book', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rl.passageComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rl.correctOfTotal', { c: correctCount, t: results.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>

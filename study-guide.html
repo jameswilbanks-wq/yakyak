@@ -186,7 +186,7 @@
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           ${columns.map((col, ci) => `
             <div class="card" style="flex:1;min-width:240px;padding:0;overflow:hidden;">
-              <div style="padding:12px 16px;background:${ci === 0 ? 'var(--accent-soft)' : 'var(--mint-soft)'};color:${ci === 0 ? 'var(--accent-ink)' : 'var(--mint)'};font-weight:800;font-family:var(--font-display);font-size:14px;">${escapeHtml(col.label || '')}</div>
+              <div style="padding:12px 16px;background:${ci === 0 ? 'var(--accent-soft)' : 'var(--mint-soft)'};color:${ci === 0 ? 'var(--dark)' : 'var(--mint)'};font-weight:800;font-family:var(--font-display);font-size:14px;">${escapeHtml(col.label || '')}</div>
               <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px;">
                 ${(col.rows || []).map(r => `
                   <div>

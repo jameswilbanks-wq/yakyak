@@ -315,7 +315,7 @@
       const xpEarned = 20 + (goalCompleted ? 20 : 0);
       document.getElementById('roleplayBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:var(--accent-ink);">${icon(goalCompleted ? 'trophy' : 'chat', { size: 40 })}</div>
+          <div style="color:var(--dark);">${icon(goalCompleted ? 'trophy' : 'chat', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${goalCompleted ? t('rp.goalReached') : t('rp.convoEnded')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rp.exchanges', { n: turnCount })} · +${xpEarned} XP</p>
           ${grammarFlagged.length ? `

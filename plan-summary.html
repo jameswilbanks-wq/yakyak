@@ -34,7 +34,7 @@
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
               ${steps.map(s => {
                 const info = MODULE_INFO[s.module] || { icon: 'sparkle', nameKey: '' };
-                return `<div style="display:flex;align-items:center;gap:10px;color:var(--accent-ink);">
+                return `<div style="display:flex;align-items:center;gap:10px;color:var(--dark);">
                   <span>${icon(info.icon, { size: 16 })}</span>
                   <span style="flex:1;font-size:13.5px;color:var(--text);">${info.nameKey ? t(info.nameKey) : s.module}</span>
                   <span class="chip-mini">${s.minutes} min</span>
