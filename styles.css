@@ -278,6 +278,12 @@ a { color: var(--mint); }
 .icon-square { width:44px; height:44px; border-radius:12px; border:1.5px solid var(--dark); display:flex; align-items:center; justify-content:center; flex-shrink:0; background:transparent; color:var(--dark); }
 .icon-square.sm { width:34px; height:34px; border-radius:10px; }
 .icon-square .icon { color: var(--dark); }
+/* Any icon-square nested in a dark panel (dark-band, alt-card.dark) needs
+   light ink instead — .icon-square .icon above sets color directly on the
+   svg, which beats a plain inherited color from an ancestor, so this needs
+   its own explicit override rather than relying on inheritance. */
+.dark-band .icon-square, .alt-card.dark .icon-square { border-color: rgba(245,248,238,.4); }
+.dark-band .icon-square .icon, .alt-card.dark .icon-square .icon { color: #F5F8EE; }
 
 .dark-band { background:var(--dark); color:#F5F8EE; border-radius:22px; padding:22px 24px; }
 .dark-band .text-dim, .dark-band .text-faint { color: rgba(245,248,238,.7); }
