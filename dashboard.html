@@ -41,7 +41,7 @@
         <div class="modal-card">
           <h2 style="font-size:20px;margin-bottom:4px;">${t('lvl.modalTitle')}</h2>
           ${hasAssessment ? `
-            <p style="font-weight:800;font-size:17px;margin:10px 0 6px;color:var(--accent-ink);">${tierLabel(profile.assessed_level)}</p>
+            <p style="font-weight:800;font-size:17px;margin:10px 0 6px;color:var(--dark);">${tierLabel(profile.assessed_level)}</p>
             <p class="text-dim" style="font-size:13.5px;line-height:1.5;">${profile.assessed_reasoning || ''}</p>
             ${(profile.assessed_focus_areas && profile.assessed_focus_areas.length) ? `
               <p class="label" style="margin-top:16px;">${t('lvl.focusOn')}</p>
@@ -66,7 +66,7 @@
             <div class="eyes" style="gap:3.6px;"><div class="eye" style="width:2px;height:2px;"></div><div class="eye" style="width:2px;height:2px;"></div></div>
             <div class="smile" style="bottom:4.8px;width:5.6px;height:2.8px;border-bottom-width:2px;"></div>
           </div>
-          <span style="font-weight:800;font-size:13px;color:var(--accent-ink);letter-spacing:.2px;">YakYak</span>
+          <span style="font-weight:800;font-size:13px;color:var(--dark);letter-spacing:.2px;">YakYak</span>
         </div>
         <div id="coachSlot"></div>
         <div id="cheerBannerSlot"></div>
@@ -81,8 +81,8 @@
             </div>
           </div>
           <div style="display:flex;gap:8px;">
-            <div class="stat-pill" style="color:var(--accent-ink);">${icon('flame', { size: 15 })} <span>${profile.streak}</span></div>
-            <div class="stat-pill" style="color:var(--accent-ink);">${icon('sparkle', { size: 15 })} <span>${profile.xp}</span></div>
+            <div class="stat-pill" style="color:var(--dark);">${icon('flame', { size: 15 })} <span>${profile.streak}</span></div>
+            <div class="stat-pill" style="color:var(--dark);">${icon('sparkle', { size: 15 })} <span>${profile.xp}</span></div>
           </div>
         </div>
 
@@ -115,13 +115,13 @@
       const elig = levelTestEligibility(profile);
       if (elig.eligible) {
         slot.innerHTML = `
-          <a href="level-test.html" class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);border:1px solid var(--accent);background:var(--accent-soft);">
-            <div style="color:var(--accent-ink);">${icon('trophy', { size: 24 })}</div>
+          <a href="level-test.html" class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);border:1px solid var(--dark);background:var(--accent-soft);">
+            <div class="icon-square sm" style="border-color:var(--dark);color:var(--dark);">${icon('trophy', { size: 18 })}</div>
             <div style="flex:1;">
-              <div style="font-weight:800;font-size:14px;color:var(--accent-ink);">${t('lvt.dashBannerTitle')}</div>
+              <div style="font-weight:800;font-size:14px;color:var(--dark);">${t('lvt.dashBannerTitle')}</div>
               <div class="text-faint" style="font-size:12px;margin-top:2px;">${t('lvt.dashBannerDesc', { level: profile.current_level, next: elig.nextLevel })}</div>
             </div>
-            <div style="font-size:16px;color:var(--accent-ink);">→</div>
+            <div style="font-size:16px;color:var(--dark);">→</div>
           </a>`;
       } else if (elig.reason === 'cooldown') {
         slot.innerHTML = `
@@ -167,14 +167,20 @@
     function renderFork() {
       const slot = document.getElementById('mainSlot');
       slot.innerHTML = `
-        <button class="card" id="forkPlanBtn" style="text-align:left;width:100%;cursor:pointer;border:1px solid var(--accent);">
-          <span class="chip-mini">${icon('bot', { size: 12 })} ${t('pl.forkPlanChip')}</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('pl.forkPlanTitle')}</h2>
-          <p class="text-dim" style="font-size:13.5px;">${t('pl.forkPlanDesc')}</p>
+        <button class="dark-band" id="forkPlanBtn" style="text-align:left;width:100%;cursor:pointer;border:none;display:block;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <span class="icon-square sm" style="border-color:rgba(245,248,238,.4);color:#F5F8EE;">${icon('bot', { size: 16 })}</span>
+            <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:800;color:rgba(245,248,238,.65);">${t('pl.forkPlanChip')}</span>
+          </div>
+          <h2 style="font-size:20px;margin:0 0 4px;color:#F5F8EE;">${t('pl.forkPlanTitle')}</h2>
+          <p style="font-size:13.5px;color:rgba(245,248,238,.72);">${t('pl.forkPlanDesc')}</p>
         </button>
         <button class="card" id="forkCarteBtn" style="text-align:left;width:100%;cursor:pointer;margin-top:14px;">
-          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${icon('fork', { size: 12 })} ${t('pl.forkCarteChip')}</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('pl.forkCarteTitle')}</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <span class="icon-square sm">${icon('fork', { size: 16 })}</span>
+            <span class="label" style="margin-bottom:0;">${t('pl.forkCarteChip')}</span>
+          </div>
+          <h2 style="font-size:20px;margin:0 0 4px;">${t('pl.forkCarteTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;">${t('pl.forkCarteDesc')}</p>
         </button>
       `;
@@ -272,7 +278,7 @@
         const info = MODULE_INFO[s.module] || { icon: 'sparkle', nameKey: '' };
         return `
         <div class="card" style="padding:12px 14px;">
-          <div style="display:flex;align-items:center;gap:10px;color:var(--accent-ink);">
+          <div style="display:flex;align-items:center;gap:10px;color:var(--dark);">
             <span>${icon(info.icon, { size: 18 })}</span>
             <div style="flex:1;">
               <div style="font-weight:700;font-size:14px;">${i + 1}. ${info.nameKey ? t(info.nameKey) : s.module}</div>
@@ -295,46 +301,61 @@
       const learning = langByCode(profile.target_language);
       slot.innerHTML = `
         <div class="card">
-          <span class="chip-mini">${icon('speak', { size: 12 })} ${t('db.naturalDialogChip')}</span>
-          <h2 style="font-size:22px;margin:8px 0 4px;">${t('db.naturalDialogTitle')}</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span class="icon-square">${icon('speak', { size: 20 })}</span>
+            <span class="label" style="margin-bottom:0;">${t('db.naturalDialogChip')}</span>
+          </div>
+          <h2 style="font-size:22px;margin:0 0 4px;">${t('db.naturalDialogTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.naturalDialogDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startLessonBtn">${t('db.startTalking')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${t('db.translateDiagnose')}</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.translateWeakSpots')}</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span class="icon-square">${icon('letters', { size: 20 })}</span>
+            <span class="label" style="margin-bottom:0;">${t('db.translateDiagnose')}</span>
+          </div>
+          <h2 style="font-size:20px;margin:0 0 4px;">${t('db.translateWeakSpots')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.sixSentences')}</p>
           <button class="btn-primary" id="startTranslateBtn">${t('db.startTranslating')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini">${t('db.listenRead')}</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.comprehensibleInput')}</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span class="icon-square">${icon('book', { size: 20 })}</span>
+            <span class="label" style="margin-bottom:0;">${t('db.listenRead')}</span>
+          </div>
+          <h2 style="font-size:20px;margin:0 0 4px;">${t('db.comprehensibleInput')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.shortPassage')}</p>
           <button class="btn-primary" id="startInputBtn">${t('db.startReadingListening')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${icon('book', { size: 12 })} ${t('db.readingChip')}</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.readingTitle')}</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span class="icon-square">${icon('owl', { size: 20 })}</span>
+            <span class="label" style="margin-bottom:0;">${t('db.readingChip')}</span>
+          </div>
+          <h2 style="font-size:20px;margin:0 0 4px;">${t('db.readingTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.readingDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startReadingBtn">${t('db.startReading')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-            <span class="chip-mini" style="background:var(--mint-soft);color:var(--mint);">${icon('books', { size: 12 })} ${t('db.vocabChip')}</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span class="icon-square">${icon('books', { size: 20 })}</span>
             <span class="text-faint" style="font-size:11px;">${t('db.vocabProgress', { learned: vocabProgress.learned, target: vocabProgress.target, level: profile.current_level })}</span>
           </div>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.vocabTitle')}</h2>
+          <h2 style="font-size:20px;margin:0 0 4px;">${t('db.vocabTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.vocabDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startVocabBtn">${t('db.startVocab')}</button>
         </div>
 
         <div class="card" style="margin-top:14px;">
-          <span class="chip-mini">${icon('ruler', { size: 12 })} ${t('db.studyGuideChip')}</span>
-          <h2 style="font-size:20px;margin:8px 0 4px;">${t('db.studyGuideTitle')}</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span class="icon-square">${icon('ruler', { size: 20 })}</span>
+            <span class="label" style="margin-bottom:0;">${t('db.studyGuideChip')}</span>
+          </div>
+          <h2 style="font-size:20px;margin:0 0 4px;">${t('db.studyGuideTitle')}</h2>
           <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.studyGuideDesc', { lang: langDisplay(learning.code) })}</p>
           <button class="btn-primary" id="startStudyGuideBtn">${t('db.startStudyGuide')}</button>
         </div>
