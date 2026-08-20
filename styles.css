@@ -184,6 +184,9 @@ a { color: var(--mint); }
    reading.html. */
 .sb-word { cursor:pointer; border-radius:4px; padding:0 1px; border-bottom:1.5px dotted var(--border); transition:background-color .12s ease; }
 .sb-word:active { background:var(--accent-soft); }
+/* Read-along narrator's current word, in Storybook mode — mint mirrors the
+   "actively playing" color Guided mode's TTS highlight already uses. */
+.sb-word-active { background:var(--mint-soft); color:var(--mint-2); font-weight:800; border-radius:4px; }
 
 .lesson-wrap { min-height:100vh; display:flex; flex-direction:column; max-width:640px; margin:0 auto; }
 .lesson-top { display:flex; align-items:center; justify-content:space-between; padding:16px; }

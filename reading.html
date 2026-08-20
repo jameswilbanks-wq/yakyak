@@ -40,6 +40,12 @@
     // copyrighted books). Same underlying passage data either way — the
     // toggle just switches how it's rendered.
     let mode = localStorage.getItem('yakyak_reading_mode') || 'guided';
+    // Storybook's read-along narrator: reads the whole passage aloud,
+    // sentence by sentence, with a live word-by-word highlight — like a
+    // karaoke-style read-along video. Defaults on (that's the point of the
+    // feature) but stays a real per-device toggle since some learners want
+    // Storybook to stay a silent, tap-to-look-up-only reading mode.
+    let readerOn = localStorage.getItem('yakyak_reading_reader') !== '0';
     let isPlaying = false;
     let stopRequested = false;
 
@@ -289,11 +295,55 @@
       let m;
       while ((m = regex.exec(text))) {
         html += escapeHtml(text.slice(last, m.index));
-        html += `<span class="sb-word" data-word="${escapeHtml(m[0])}" data-sidx="${sIdx}">${escapeHtml(m[0])}</span>`;
+        html += `<span class="sb-word" data-word="${escapeHtml(m[0])}" data-sidx="${sIdx}" data-start="${m.index}">${escapeHtml(m[0])}</span>`;
         last = m.index + m[0].length;
       }
       html += escapeHtml(text.slice(last));
       return html;
+    }
+
+    // --- Storybook's read-along narrator -------------------------------
+    // Same one-utterance-per-sentence approach as Guided's playSentence,
+    // just scoped to .sb-word spans (keyed by sentence index + char offset,
+    // same offsets sentenceToTapSpansHTML() just wired up) instead of
+    // Guided's .rl-word spans, since Storybook flows every sentence
+    // together as continuous prose rather than one row per sentence.
+    function highlightStoryWordAt(sIdx, charIndex) {
+      const spans = document.querySelectorAll(`.sb-word[data-sidx="${sIdx}"]`);
+      let target = null;
+      spans.forEach(s => {
+        s.classList.remove('sb-word-active');
+        if (parseInt(s.dataset.start, 10) <= charIndex) target = s;
+      });
+      if (target) target.classList.add('sb-word-active');
+    }
+
+    function clearStoryHighlight() {
+      document.querySelectorAll('.sb-word-active').forEach(s => s.classList.remove('sb-word-active'));
+    }
+
+    function playStorySentence(idx, onEnd) {
+      const s = passage.sentences[idx];
+      if (!('speechSynthesis' in window) || !s) { onEnd(); return; }
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(s.target);
+      u.lang = langByCode(profile.target_language).tts;
+      u.rate = READING_RATE[speed] || 0.95;
+      u.onboundary = (e) => { if (!e.name || e.name === 'word') highlightStoryWordAt(idx, e.charIndex); };
+      u.onend = () => { clearStoryHighlight(); onEnd(); };
+      u.onerror = () => { clearStoryHighlight(); onEnd(); };
+      window.speechSynthesis.speak(u);
+    }
+
+    function playStoryAll() {
+      isPlaying = true;
+      stopRequested = false;
+      updatePlayButtonLabel();
+      const step = (idx) => {
+        if (stopRequested || idx >= passage.sentences.length) { isPlaying = false; stopRequested = false; updatePlayButtonLabel(); return; }
+        playStorySentence(idx, () => step(idx + 1));
+      };
+      step(0);
     }
 
     function renderStorybook() {
@@ -306,6 +356,14 @@
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-body">
           ${modeToggleHTML()}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <button class="chip${readerOn ? ' active' : ''}" id="readerToggleBtn" style="padding:4px 10px;font-size:12px;">${icon('speaker', { size: 12 })} ${readerOn ? t('rl.readerOn') : t('rl.readerOff')}</button>
+            ${readerOn ? `
+              <button class="btn-ghost" id="playAllBtn" style="padding:6px 12px;">▶ ${t('rl.playAll')}</button>
+              <button class="chip${speed === 'normal' ? ' active' : ''}" data-speed="normal" style="padding:4px 10px;font-size:12px;">${t('rl.speedNormal')}</button>
+              <button class="chip${speed === 'slow' ? ' active' : ''}" data-speed="slow" style="padding:4px 10px;font-size:12px;">${t('rl.speedSlow')}</button>
+            ` : ''}
+          </div>
           <p class="text-faint" style="font-size:11px;margin-bottom:14px;">${t('rl.tapHint')}</p>
           <div class="card" style="text-align:center;padding:22px 20px;margin-bottom:14px;">
             <h1 style="font-size:20px;font-family:var(--font-display);">${passage.title}</h1>
@@ -318,11 +376,33 @@
         </div>`;
 
       wireModeToggle();
+      document.getElementById('readerToggleBtn').addEventListener('click', () => {
+        readerOn = !readerOn;
+        localStorage.setItem('yakyak_reading_reader', readerOn ? '1' : '0');
+        stopPlayback();
+        renderStorybook();
+      });
       document.querySelectorAll('.sb-word').forEach(el => el.addEventListener('click', () => {
+        stopPlayback();
         const sIdx = parseInt(el.dataset.sidx, 10);
         openWordLookup(el.dataset.word, passage.sentences[sIdx] ? passage.sentences[sIdx].target : '');
       }));
-      document.getElementById('doneReadingBtn').addEventListener('click', () => { startQuestions(); });
+      document.getElementById('doneReadingBtn').addEventListener('click', () => { stopPlayback(); startQuestions(); });
+
+      if (readerOn) {
+        updatePlayButtonLabel();
+        document.getElementById('playAllBtn').addEventListener('click', () => { isPlaying ? stopPlayback() : playStoryAll(); });
+        document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => {
+          speed = b.dataset.speed;
+          localStorage.setItem('yakyak_reading_speed', speed);
+          stopPlayback();
+          renderStorybook();
+        }));
+        // Reader on means the passage narrates itself whenever Storybook is
+        // showing — same "walks in already reading" feel as the read-along
+        // reference video, not a silent page waiting to be pressed play.
+        playStoryAll();
+      }
     }
 
     function openWordLookup(word, sentenceContext) {
