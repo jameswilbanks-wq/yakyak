@@ -1048,7 +1048,14 @@ const ICONS = {
 };
 function icon(name, opts) {
   const body = ICONS[name] || ICONS.sparkle;
-  const cls = opts && opts.size ? '' : (opts && opts.cls ? opts.cls : 'icon');
+  // Always keep the base "icon" class (or an explicit override) so the
+  // stroke/fill/linecap rules from styles.css still apply — a custom
+  // opts.size only needs to override width/height/vertical-align via an
+  // inline style, which wins on specificity anyway. Dropping the class
+  // entirely (the old behavior) left multi-path outline icons like "bot"
+  // or "fork" with no stroke at all, rendering as a filled-black blob
+  // instead of the intended line art.
+  const cls = (opts && opts.cls) ? opts.cls : 'icon';
   const style = opts && opts.size ? ` style="width:${opts.size}px;height:${opts.size}px;vertical-align:-${Math.round(opts.size * 0.18)}px"` : '';
   return `<svg class="${cls}"${style} viewBox="0 0 24 24">${body}</svg>`;
 }
