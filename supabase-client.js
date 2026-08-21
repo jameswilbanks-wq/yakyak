@@ -19,6 +19,7 @@ const GENERATE_COACH_CHECKIN_URL = SUPABASE_URL + "/functions/v1/generate-coach-
 const GENERATE_VOCAB_EXAMPLE_URL = SUPABASE_URL + "/functions/v1/generate-vocab-example";
 const LOOKUP_WORD_URL = SUPABASE_URL + "/functions/v1/lookup-word";
 const GENERATE_STUDY_GUIDE_PAGE_URL = SUPABASE_URL + "/functions/v1/generate-study-guide-page";
+const GENERATE_PLACEMENT_TEST_URL = SUPABASE_URL + "/functions/v1/generate-placement-test";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -620,6 +621,39 @@ function badgesEarnedHTML(badges) {
           </div>`).join('')}
       </div>
     </div>`;
+}
+
+// Full-screen confetti burst for a perfect score — the same "congrats!"
+// feeling as an iMessage confetti effect, fired the instant a results
+// screen renders 100%. Pure DOM+CSS (see .confetti-burst/.confetti-piece
+// in styles.css): spawns a batch of small colored pieces at random
+// positions near the top of the viewport, each with its own randomized
+// fall duration/delay, sideways drift, size, and spin, then removes the
+// whole burst from the DOM once every piece has finished animating so it
+// never lingers behind as a debugging surprise later in the session.
+function fireConfetti() {
+  const colors = ['#FF6B6B', '#FFD93D', '#6BCB77', '#4D96FF', '#B983FF', '#FF9F45'];
+  const container = document.createElement('div');
+  container.className = 'confetti-burst';
+  const pieceCount = 90;
+  for (let i = 0; i < pieceCount; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = (Math.random() * 100) + 'vw';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    const size = 6 + Math.random() * 7;
+    piece.style.width = size + 'px';
+    piece.style.height = (size * (0.4 + Math.random() * 0.7)) + 'px';
+    piece.style.borderRadius = Math.random() < 0.3 ? '50%' : '2px';
+    piece.style.setProperty('--confetti-drift', Math.round(Math.random() * 200 - 100) + 'px');
+    piece.style.setProperty('--confetti-rot', Math.round(Math.random() * 720 - 360) + 'deg');
+    const duration = 2.2 + Math.random() * 1.4;
+    piece.style.animationDuration = duration + 's';
+    piece.style.animationDelay = (Math.random() * 0.35) + 's';
+    container.appendChild(piece);
+  }
+  document.body.appendChild(container);
+  setTimeout(() => container.remove(), 4200);
 }
 
 function celebrationHTML(levelUpResult) {

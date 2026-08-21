@@ -245,6 +245,7 @@
       document.getElementById('continueDqBtn').addEventListener('click', () => {
         quizIndex = 0; picked = null; correctCount = 0; renderQuiz();
       });
+      if (correct === total) fireConfetti();
     }
 
     function renderQuiz() {
@@ -281,16 +282,18 @@
 
     async function finishLesson() {
       const xpEarned = 20 + correctCount * 10;
+      const perfect = lesson.quiz.length > 0 && correctCount === lesson.quiz.length;
       document.getElementById('lessonTitle').textContent = '';
       document.getElementById('lessonBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:var(--dark);">${icon('trophy', { size: 40 })}</div>
+          <div style="color:${perfect ? 'var(--mint)' : 'var(--dark)'};">${icon(perfect ? 'confetti' : 'trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('ls.lessonComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;margin-bottom:20px;">${t('ls.correctOfTotal', { c: correctCount, t: lesson.quiz.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('ls.backToHome')}</button>
         </div>`;
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      if (perfect) fireConfetti();
 
       if (lessonRowId) {
         await db.from('lesson_completions').insert({

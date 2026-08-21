@@ -514,12 +514,13 @@
       const avgPron = scored.length ? Math.round(scored.reduce((s, r) => s + r.pronScore, 0) / scored.length) : null;
       const compCorrect = sentenceResults.filter(r => r.comprehensionCorrect).length;
       const total = sentenceResults.length;
+      const perfect = total > 0 && compCorrect === total && (avgPron === null || avgPron >= 100);
       const xpEarned = 15 + compCorrect * 8 + (avgPron !== null ? Math.round(avgPron / 10) : 0);
 
       document.getElementById('topLabel').textContent = '';
       document.getElementById('inputBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:var(--dark);">${icon('trophy', { size: 40 })}</div>
+          <div style="color:${perfect ? 'var(--mint)' : 'var(--dark)'};">${icon(perfect ? 'confetti' : 'trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('in.niceWorkTitle')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('in.understoodOfTotal', { c: compCorrect, t: total })}${avgPron !== null ? ` · ${t('in.pronAvg', { n: avgPron })}` : ''}</p>
           <div id="levelUpSlot" style="width:100%;"></div>
@@ -529,6 +530,7 @@
         if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
         else { window.location.href = 'dashboard.html'; }
       });
+      if (perfect) fireConfetti();
 
       if (passageId) {
         await db.from('input_completions').insert({

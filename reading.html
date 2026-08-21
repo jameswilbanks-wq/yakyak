@@ -502,18 +502,20 @@
 
     async function finishSession() {
       const correctCount = results.filter(Boolean).length;
+      const perfect = results.length > 0 && correctCount === results.length;
       const xpEarned = 12 + correctCount * 5;
 
       document.getElementById('topLabel').textContent = '';
       document.getElementById('readingBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:${correctCount === results.length ? 'var(--mint)' : 'var(--dark)'};">${icon(correctCount === results.length ? 'confetti' : 'book', { size: 40 })}</div>
+          <div style="color:${perfect ? 'var(--mint)' : 'var(--dark)'};">${icon(perfect ? 'confetti' : 'book', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rl.passageComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rl.correctOfTotal', { c: correctCount, t: results.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rl.backToHome')}</button>
         </div>`;
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      if (perfect) fireConfetti();
 
       if (passageId) {
         await db.from('reading_completions').insert({

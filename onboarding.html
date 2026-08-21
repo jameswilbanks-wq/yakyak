@@ -51,6 +51,19 @@
       motivations: [], style: null,
     };
 
+    // The 'level' step has its own little sub-flow: a brand-new learner
+    // either already knows their CEFR level (the original ladder picker,
+    // still here unchanged) or doesn't and wants a quick placement test to
+    // figure it out. levelMode tracks which of those four screens is
+    // showing right now — it's pure UI state, never written to the
+    // profile, so it isn't reset by re-rendering the step.
+    // 'choose' -> 'testing' -> 'result' -> 'manual' (ladder, pre-filled)
+    //          -> 'manual' directly if they already know their level
+    let levelMode = 'choose';
+    let placementQuestions = [], placementAnswers = [], placementIdx = 0;
+    let placementLoading = false, placementError = false;
+    let placementResultLevel = null, placementSuggestedTarget = null;
+
     function valid() {
       switch (steps[stepIndex]) {
         case 'name': return form.name.trim().length > 0 && form.learning !== null;
@@ -74,12 +87,28 @@
 
     function renderFooter() {
       const footer = document.getElementById('stepFooter');
+      const s = steps[stepIndex];
+      // The choose/testing/result screens on the 'level' step have their
+      // own inline action buttons (pick a path, tap an answer, continue
+      // from results) — the wizard's standard Continue button would just
+      // be redundant (and, since form.target isn't set yet, permanently
+      // disabled) alongside them, so it's hidden for those three screens
+      // and only reappears once the ladder ('manual') is showing.
+      const hideNext = s === 'level' && levelMode !== 'manual';
       footer.innerHTML = `
         ${stepIndex > 0 ? `<button class="btn-ghost" id="backBtn">${t('ob.back')}</button>` : '<span></span>'}
-        <button class="btn-primary" id="nextBtn" ${valid() ? '' : 'disabled'}>${stepIndex === steps.length - 1 ? t('ob.buildPlan') : t('ob.continue')}</button>
+        ${hideNext ? '<span></span>' : `<button class="btn-primary" id="nextBtn" ${valid() ? '' : 'disabled'}>${stepIndex === steps.length - 1 ? t('ob.buildPlan') : t('ob.continue')}</button>`}
       `;
-      if (stepIndex > 0) document.getElementById('backBtn').addEventListener('click', () => { stepIndex--; renderStep(); });
-      document.getElementById('nextBtn').addEventListener('click', onNext);
+      if (stepIndex > 0) {
+        document.getElementById('backBtn').addEventListener('click', () => {
+          // Backing out of the test or its results screen should return to
+          // the choose screen, not leave the level step entirely and lose
+          // the language/name already entered on the previous step.
+          if (s === 'level' && (levelMode === 'testing' || levelMode === 'result')) { levelMode = 'choose'; renderStep(); }
+          else { stepIndex--; renderStep(); }
+        });
+      }
+      if (!hideNext) document.getElementById('nextBtn').addEventListener('click', onNext);
     }
 
     async function onNext() {
@@ -127,25 +156,10 @@
       }
 
       if (s === 'level') {
-        content.innerHTML = `
-          <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.whereHeaded')}</h1>
-          <p class="text-dim" id="levelHint" style="margin-bottom:4px;font-size:14px;"></p>
-          <div class="card" id="ladderCard" style="padding:18px 18px 6px;margin-top:18px;"></div>
-        `;
-        updateLevelHint();
-        renderLadder(document.getElementById('ladderCard'), {
-          mode: 'select', current: form.current, target: form.target,
-          onSelect: (code) => {
-            if (!form.current) { form.current = code; }
-            else if (!form.target) {
-              const curIdx = LEVELS.findIndex(l => l.code === form.current);
-              const codeIdx = LEVELS.findIndex(l => l.code === code);
-              if (codeIdx <= curIdx) { form.current = code; form.target = null; }
-              else { form.target = code; }
-            } else { form.current = code; form.target = null; }
-            renderStep();
-          }
-        });
+        if (levelMode === 'choose') renderLevelChoice(content);
+        else if (levelMode === 'testing') renderPlacementTesting(content);
+        else if (levelMode === 'result') renderPlacementResult(content);
+        else renderLevelLadder(content);
       }
 
       if (s === 'motivation') {
@@ -183,6 +197,196 @@
       if (!form.current) hint.textContent = t('ob.levelHint1');
       else if (!form.target) hint.innerHTML = `<b style="color:var(--text);">${form.current}</b> ${t('ob.levelHint2')}`;
       else hint.innerHTML = `${t('ob.levelHint3a')} <b style="color:var(--text);">${form.current}</b> ${t('ob.levelHint3b')} <b style="color:var(--text);">${form.target}</b>.`;
+    }
+
+    // --- Level step, screen 1: know it or test it? -------------------------
+
+    function renderLevelChoice(content) {
+      content.innerHTML = `
+        <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.whereHeaded')}</h1>
+        <p class="text-dim" style="margin-bottom:20px;font-size:14px;">${t('plt.chooseSubtitle')}</p>
+        <button class="dark-band" id="knowLevelBtn" style="text-align:left;width:100%;cursor:pointer;border:none;display:block;">
+          <div style="font-size:17px;font-weight:800;font-family:var(--font-display);color:#F5F8EE;">${t('plt.knowLevelTitle')}</div>
+          <p style="font-size:13px;margin-top:4px;color:rgba(245,248,238,.72);">${t('plt.knowLevelDesc')}</p>
+        </button>
+        <button class="card" id="takeTestBtn" style="text-align:left;width:100%;cursor:pointer;margin-top:12px;">
+          <div style="font-size:17px;font-weight:800;font-family:var(--font-display);">${t('plt.takeTestTitle')}</div>
+          <p class="text-dim" style="font-size:13px;margin-top:4px;">${t('plt.takeTestDesc')}</p>
+        </button>
+      `;
+      document.getElementById('knowLevelBtn').addEventListener('click', () => { levelMode = 'manual'; renderStep(); });
+      document.getElementById('takeTestBtn').addEventListener('click', startPlacementTest);
+    }
+
+    // --- Level step, screen 2 (know it): the existing ladder picker --------
+
+    function renderLevelLadder(content) {
+      content.innerHTML = `
+        <h1 style="font-size:26px;margin-bottom:8px;">${t('ob.whereHeaded')}</h1>
+        <p class="text-dim" id="levelHint" style="margin-bottom:4px;font-size:14px;"></p>
+        <div class="card" id="ladderCard" style="padding:18px 18px 6px;margin-top:18px;"></div>
+        <button class="btn-ghost" id="notSureBtn" style="margin-top:14px;padding-left:0;">${t('plt.notSureLink')}</button>
+      `;
+      updateLevelHint();
+      renderLadder(document.getElementById('ladderCard'), {
+        mode: 'select', current: form.current, target: form.target,
+        onSelect: (code) => {
+          if (!form.current) { form.current = code; }
+          else if (!form.target) {
+            const curIdx = LEVELS.findIndex(l => l.code === form.current);
+            const codeIdx = LEVELS.findIndex(l => l.code === code);
+            if (codeIdx <= curIdx) { form.current = code; form.target = null; }
+            else { form.target = code; }
+          } else { form.current = code; form.target = null; }
+          renderStep();
+        }
+      });
+      document.getElementById('notSureBtn').addEventListener('click', startPlacementTest);
+    }
+
+    // --- Level step, screen 3: the placement test ---------------------------
+    // A quick (10-question, ~2 minute) multiple-choice battery — 2 questions
+    // each at A1/A2/B1/B2/C1 — for a learner who has no idea where to start.
+    // Answered questions are graded locally (each has its own correctIndex,
+    // no AI call needed to check them), and the CEFR placement is derived
+    // from the pattern of right/wrong answers by computePlacementLevel().
+
+    async function startPlacementTest() {
+      levelMode = 'testing';
+      placementLoading = true;
+      placementError = false;
+      renderStep();
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GENERATE_PLACEMENT_TEST_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ targetLanguage: form.learning.name, nativeLanguage: form.native }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.questions || data.questions.length < 10) throw new Error('Placement battery too small');
+        placementQuestions = data.questions.slice(0, 10);
+        placementAnswers = [];
+        placementIdx = 0;
+        placementLoading = false;
+        renderStep();
+      } catch (e) {
+        placementLoading = false;
+        placementError = true;
+        renderStep();
+      }
+    }
+
+    function renderPlacementTesting(content) {
+      if (placementLoading) {
+        content.innerHTML = `
+          <div class="lesson-center" style="padding:60px 0;">
+            <div id="mascotSlot" style="width:52px;"></div>
+            <p class="text-dim" style="margin-top:16px;font-size:14.5px;">${t('lvt.building')}</p>
+          </div>`;
+        document.getElementById('mascotSlot').innerHTML = mascotHTML(52);
+        return;
+      }
+      if (placementError) {
+        content.innerHTML = `
+          <div class="lesson-center error-box" style="padding:50px 0;">
+            <div style="color:var(--danger);">${icon('warning', { size: 30 })}</div>
+            <p style="font-weight:700;">${t('lvt.couldntBuild')}</p>
+            <button class="btn-primary" id="retryTestBtn">${t('ls.tryAgain')}</button>
+          </div>`;
+        document.getElementById('retryTestBtn').addEventListener('click', startPlacementTest);
+        return;
+      }
+      renderPlacementQuestion(content);
+    }
+
+    function renderPlacementQuestion(content) {
+      const total = placementQuestions.length;
+      const q = placementQuestions[placementIdx];
+      content.innerHTML = `
+        <p class="text-faint" style="font-size:12px;margin-bottom:4px;">${t('lvt.questionOf', { n: placementIdx + 1, total })}</p>
+        <div class="progress-bar" style="margin:0 0 20px;">${placementQuestions.map((_, i) => `<div class="progress-seg${i <= placementIdx ? ' filled' : ''}"></div>`).join('')}</div>
+        <h1 style="font-size:19px;margin-bottom:18px;">${escapeHtml(q.prompt)}</h1>
+        <div style="display:flex;flex-direction:column;gap:10px;" id="plOptList"></div>
+        <button class="btn-ghost" id="plExitBtn" style="margin-top:18px;padding-left:0;">${t('plt.exitTest')}</button>
+      `;
+      const optList = document.getElementById('plOptList');
+      optList.innerHTML = q.options.map((opt, i) => `<button class="row-option" data-i="${i}"><span>${escapeHtml(opt)}</span></button>`).join('');
+      optList.querySelectorAll('.row-option').forEach(b => b.addEventListener('click', () => {
+        placementAnswers[placementIdx] = parseInt(b.dataset.i, 10);
+        placementIdx++;
+        if (placementIdx < total) { renderPlacementQuestion(content); }
+        else finishPlacementTest();
+      }));
+      document.getElementById('plExitBtn').addEventListener('click', () => { levelMode = 'choose'; renderStep(); });
+    }
+
+    // Walk the CEFR tiers from the bottom up: each tier the learner clears
+    // (at least 1 of its 2 questions right) becomes the new placement floor;
+    // the walk stops the moment a tier is missed completely (0/2), since
+    // getting nothing right at a level is a reasonable signal they're not
+    // there yet — no point crediting tiers above that. A learner who misses
+    // everything, including A1, is placed at Pre-A1 (the floor already used
+    // elsewhere in the app for absolute beginners).
+    function computePlacementLevel() {
+      const order = ['A1', 'A2', 'B1', 'B2', 'C1'];
+      const tierStats = {};
+      order.forEach(lvl => { tierStats[lvl] = { correct: 0, total: 0 }; });
+      placementQuestions.forEach((q, i) => {
+        const s = tierStats[q.level];
+        if (!s) return;
+        s.total++;
+        if (placementAnswers[i] === q.correctIndex) s.correct++;
+      });
+      let placement = 'Pre-A1';
+      for (const lvl of order) {
+        if (tierStats[lvl].correct >= 1) placement = lvl;
+        if (tierStats[lvl].correct === 0) break;
+      }
+      return { placement, tierStats };
+    }
+
+    async function finishPlacementTest() {
+      const { placement, tierStats } = computePlacementLevel();
+      placementResultLevel = placement;
+      const idx = Math.max(0, LEVELS.findIndex(l => l.code === placement));
+      placementSuggestedTarget = LEVELS[Math.min(LEVELS.length - 1, idx + 2)].code;
+
+      try {
+        await db.from('placement_test_attempts').insert({
+          user_id: user.id,
+          target_language: form.learning.code,
+          native_language: form.native,
+          determined_level: placement,
+          level_scores: tierStats,
+        });
+      } catch (e) { /* best-effort history row — must not block onboarding */ }
+
+      levelMode = 'result';
+      renderStep();
+    }
+
+    // --- Level step, screen 4: placement result, then into the ladder ------
+
+    function renderPlacementResult(content) {
+      content.innerHTML = `
+        <div class="lesson-center" style="padding:20px 0 24px;">
+          <div style="color:var(--dark);">${icon('trophy', { size: 36 })}</div>
+          <h1 style="font-size:23px;margin-top:10px;">${t('plt.resultTitle')}</h1>
+          <p class="text-dim" style="font-size:14.5px;margin-top:6px;max-width:320px;">${t('plt.resultBody', { level: placementResultLevel, label: levelLabel(placementResultLevel) })}</p>
+        </div>
+        <button class="btn-primary" id="plContinueBtn" style="width:100%;justify-content:center;">${t('plt.continueBtn')}</button>
+        <button class="btn-ghost" id="plRetakeBtn" style="width:100%;justify-content:center;margin-top:8px;">${t('plt.retakeBtn')}</button>
+      `;
+      document.getElementById('plContinueBtn').addEventListener('click', () => {
+        form.current = placementResultLevel;
+        form.target = placementSuggestedTarget;
+        levelMode = 'manual';
+        renderStep();
+      });
+      document.getElementById('plRetakeBtn').addEventListener('click', startPlacementTest);
     }
 
     async function finishOnboarding() {

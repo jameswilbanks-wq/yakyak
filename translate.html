@@ -255,6 +255,7 @@
 
     async function finishSet() {
       const correctCount = attempts.filter(a => a.correct).length;
+      const perfect = attempts.length > 0 && correctCount === attempts.length;
       const flagged = [...new Map(
         attempts.filter(a => !a.correct && a.exercise.grammarPointId)
           .map(a => [a.exercise.grammarPointId, a.exercise.grammarLabel])
@@ -263,7 +264,7 @@
 
       document.getElementById('translateBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:var(--dark);">${icon('trophy', { size: 40 })}</div>
+          <div style="color:${perfect ? 'var(--mint)' : 'var(--dark)'};">${icon(perfect ? 'confetti' : 'trophy', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('tr.setComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('tr.correctOfTotal', { c: correctCount, t: attempts.length })}</p>
           ${flagged.length ? `
@@ -279,6 +280,7 @@
         if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
         else { window.location.href = 'dashboard.html'; }
       });
+      if (perfect) fireConfetti();
 
       await updateStreakAndActivity(user, profile, xpEarned, 'translate');
 

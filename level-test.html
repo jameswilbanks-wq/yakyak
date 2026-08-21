@@ -511,6 +511,7 @@
           <button class="btn-ghost" id="doneBtn" style="width:100%;justify-content:center;margin-top:8px;">${t('lvt.backToDashboard')}</button>
         </div>`;
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      if (overallScore === 100) fireConfetti();
     }
 
     // --- Boot ------------------------------------------------------------

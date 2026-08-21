@@ -192,12 +192,13 @@
 
     async function finishSession() {
       const correctCount = results.filter(r => r.correct).length;
+      const perfect = words.length > 0 && correctCount === words.length;
       const xpEarned = 10 + correctCount * 6;
 
       document.getElementById('topLabel').textContent = '';
       document.getElementById('vocabBody').innerHTML = `
         <div class="lesson-center">
-          <div style="color:${correctCount === words.length ? 'var(--mint)' : 'var(--dark)'};">${icon(correctCount === words.length ? 'confetti' : 'books', { size: 40 })}</div>
+          <div style="color:${perfect ? 'var(--mint)' : 'var(--dark)'};">${icon(perfect ? 'confetti' : 'books', { size: 40 })}</div>
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('vc.batchComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('vc.correctOfTotal', { c: correctCount, t: words.length })}</p>
           <p class="text-faint" style="font-size:12px;margin-top:6px;">${t('vc.addedToReview')}</p>
@@ -208,6 +209,7 @@
         if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
         else { window.location.href = 'dashboard.html'; }
       });
+      if (perfect) fireConfetti();
 
       for (const r of results) {
         if (r.word.id) await recordSkillResult(user.id, 'vocab', r.word.id, r.correct);
