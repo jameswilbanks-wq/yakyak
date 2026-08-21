@@ -28,10 +28,40 @@
     let user = null, profile = null, exercises = [], attempts = [], sessionTopic = null;
     let idx = 0, submitted = false;
     let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
+    // Which way this set translates: 'target' = read the language you're
+    // learning, write your native language (the default — most practice
+    // value comes from producing your native tongue under time pressure
+    // from what you just read/heard). 'native' flips it. This used to be a
+    // silent 50/50 mix within every set; now it's a single, deliberate
+    // choice the learner makes each time they start a standalone set (see
+    // renderDirectionPicker below). Lesson-plan steps skip the prompt and
+    // just use the default, same as they already skip the topic picker.
+    let direction = 'target';
 
     function planStepPrefix() {
       if (!planCtx) return '';
       return t('pl.stepOfTotal', { i: planCtx.plan.currentIndex + 1, n: planCtx.plan.steps.length });
+    }
+
+    function renderDirectionPicker(onChoose) {
+      const learning = langByCode(profile.target_language);
+      const targetDisplay = langDisplay(learning.code);
+      const nativeDisplay = nativeLangDisplay(profile.native_language);
+      document.getElementById('translateBody').innerHTML = `
+        <div class="lesson-body">
+          <h1 style="font-size:24px;margin-bottom:6px;">${t('tr.directionTitle')}</h1>
+          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">${t('tr.directionSubtitle')}</p>
+          <button class="dark-band" id="dirTargetBtn" style="text-align:left;width:100%;cursor:pointer;border:none;display:block;">
+            <div style="font-size:18px;font-weight:800;font-family:var(--font-display);color:#F5F8EE;">${t('tr.directionToNative', { target: targetDisplay, native: nativeDisplay })}</div>
+            <p style="font-size:13px;margin-top:4px;color:rgba(245,248,238,.72);">${t('tr.directionToNativeDesc', { target: targetDisplay, native: nativeDisplay })}</p>
+          </button>
+          <button class="card" id="dirNativeBtn" style="text-align:left;width:100%;cursor:pointer;margin-top:12px;">
+            <div style="font-size:18px;font-weight:800;font-family:var(--font-display);">${t('tr.directionToTarget', { target: targetDisplay, native: nativeDisplay })}</div>
+            <p class="text-dim" style="font-size:13px;margin-top:4px;">${t('tr.directionToTargetDesc', { target: targetDisplay, native: nativeDisplay })}</p>
+          </button>
+        </div>`;
+      document.getElementById('dirTargetBtn').addEventListener('click', () => onChoose('target'));
+      document.getElementById('dirNativeBtn').addEventListener('click', () => onChoose('native'));
     }
 
     function renderLoading() {
@@ -70,6 +100,7 @@
             interest: sessionTopic || 'daily life',
             angle: randomAngle(),
             avoid,
+            direction,
             ...(count ? { count } : {}),
           }),
         });
@@ -270,13 +301,16 @@
         sessionTopic = pickTopicForSession(getLastTopics(profile));
         loadSet();
       } else {
-        renderTopicPicker(document.getElementById('translateBody'), {
-          initial: getLastTopics(profile),
-          onStart: async (selection) => {
-            await saveLastTopics(user.id, selection);
-            sessionTopic = pickTopicForSession(selection);
-            loadSet();
-          },
+        renderDirectionPicker((chosen) => {
+          direction = chosen;
+          renderTopicPicker(document.getElementById('translateBody'), {
+            initial: getLastTopics(profile),
+            onStart: async (selection) => {
+              await saveLastTopics(user.id, selection);
+              sessionTopic = pickTopicForSession(selection);
+              loadSet();
+            },
+          });
         });
       }
     })();
