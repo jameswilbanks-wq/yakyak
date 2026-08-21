@@ -623,37 +623,48 @@ function badgesEarnedHTML(badges) {
     </div>`;
 }
 
-// Full-screen confetti burst for a perfect score — the same "congrats!"
-// feeling as an iMessage confetti effect, fired the instant a results
-// screen renders 100%. Pure DOM+CSS (see .confetti-burst/.confetti-piece
-// in styles.css): spawns a batch of small colored pieces at random
-// positions near the top of the viewport, each with its own randomized
-// fall duration/delay, sideways drift, size, and spin, then removes the
-// whole burst from the DOM once every piece has finished animating so it
-// never lingers behind as a debugging surprise later in the session.
-function fireConfetti() {
+// Confetti burst — the same "congrats!" feeling as an iMessage confetti
+// effect. Pure DOM+CSS (see .confetti-burst/.confetti-piece in
+// styles.css): spawns a batch of small colored pieces at random positions
+// near the top of the viewport, each with its own randomized fall
+// duration/delay, sideways drift, size, and spin, then removes the whole
+// burst from the DOM once every piece has finished animating so it never
+// lingers behind as a debugging surprise later in the session.
+//
+// Two tiers: fireConfetti('small') fires a quick, narrow pop for a single
+// correct answer (called right where each module already knows an answer
+// was right, e.g. right after `correct = ...`/`isCorrect === true`).
+// fireConfetti('big') — the default, unchanged from the original
+// full-screen version — is reserved for finishing an entire set/session
+// with a perfect score. Small bursts are deliberately modest so a learner
+// blazing through a set correctly doesn't get buried in confetti before
+// the real payoff at the end.
+function fireConfetti(size) {
+  const big = size !== 'small';
   const colors = ['#FF6B6B', '#FFD93D', '#6BCB77', '#4D96FF', '#B983FF', '#FF9F45'];
   const container = document.createElement('div');
   container.className = 'confetti-burst';
-  const pieceCount = 90;
+  const pieceCount = big ? 90 : 22;
+  const spreadWidth = big ? 100 : 46; // vw
+  const spreadStart = big ? 0 : 27; // vw, centers the narrow burst
   for (let i = 0; i < pieceCount; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti-piece';
-    piece.style.left = (Math.random() * 100) + 'vw';
+    piece.style.left = (spreadStart + Math.random() * spreadWidth) + 'vw';
     piece.style.background = colors[Math.floor(Math.random() * colors.length)];
-    const size = 6 + Math.random() * 7;
+    const size = (big ? 6 : 5) + Math.random() * (big ? 7 : 5);
     piece.style.width = size + 'px';
     piece.style.height = (size * (0.4 + Math.random() * 0.7)) + 'px';
     piece.style.borderRadius = Math.random() < 0.3 ? '50%' : '2px';
     piece.style.setProperty('--confetti-drift', Math.round(Math.random() * 200 - 100) + 'px');
     piece.style.setProperty('--confetti-rot', Math.round(Math.random() * 720 - 360) + 'deg');
-    const duration = 2.2 + Math.random() * 1.4;
+    const duration = big ? (2.2 + Math.random() * 1.4) : (1.1 + Math.random() * 0.7);
     piece.style.animationDuration = duration + 's';
-    piece.style.animationDelay = (Math.random() * 0.35) + 's';
+    piece.style.animationDelay = (Math.random() * (big ? 0.35 : 0.15)) + 's';
     container.appendChild(piece);
   }
   document.body.appendChild(container);
-  setTimeout(() => container.remove(), 4200);
+  setTimeout(() => container.remove(), big ? 4200 : 2200);
 }
 
 function celebrationHTML(levelUpResult) {

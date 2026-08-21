@@ -222,6 +222,7 @@
 
       submitted = true;
       attempts.push({ exercise: ex, answer, correct: result.isCorrect === true });
+      if (result.isCorrect === true) fireConfetti('small');
 
       if (ex.id) {
         await db.from('translation_attempts').insert({
@@ -280,7 +281,7 @@
         if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
         else { window.location.href = 'dashboard.html'; }
       });
-      if (perfect) fireConfetti();
+      if (perfect) fireConfetti('big');
 
       await updateStreakAndActivity(user, profile, xpEarned, 'translate');
 

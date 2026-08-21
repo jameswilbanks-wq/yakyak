@@ -486,6 +486,7 @@
           const chosen = parseInt(btn.dataset.i);
           const correct = chosen === q.answerIndex;
           results.push(correct);
+          if (correct) fireConfetti('small');
           list.querySelectorAll('.option').forEach(b => {
             b.disabled = true;
             if (parseInt(b.dataset.i) === q.answerIndex) b.classList.add('correct');
@@ -515,7 +516,7 @@
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rl.backToHome')}</button>
         </div>`;
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
-      if (perfect) fireConfetti();
+      if (perfect) fireConfetti('big');
 
       if (passageId) {
         await db.from('reading_completions').insert({

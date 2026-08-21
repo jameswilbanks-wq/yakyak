@@ -199,6 +199,7 @@
 
       dqSubmitted = true;
       dqResults.push({ line, answer, correct: result.isCorrect === true });
+      if (result.isCorrect === true) fireConfetti('small');
 
       const good = result.isCorrect;
       document.getElementById('dqFeedbackSlot').innerHTML = `
@@ -264,7 +265,7 @@
         btn.addEventListener('click', () => {
           if (picked !== null) return;
           picked = parseInt(btn.dataset.i);
-          if (picked === q.answerIndex) correctCount++;
+          if (picked === q.answerIndex) { correctCount++; fireConfetti('small'); }
           list.querySelectorAll('.option').forEach(b => {
             const i = parseInt(b.dataset.i);
             b.disabled = true;
@@ -293,7 +294,7 @@
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('ls.backToHome')}</button>
         </div>`;
       document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
-      if (perfect) fireConfetti();
+      if (perfect) fireConfetti('big');
 
       if (lessonRowId) {
         await db.from('lesson_completions').insert({
