@@ -488,6 +488,7 @@
 
         submitted = true;
         sentenceResults[sIdx].comprehensionCorrect = result.isCorrect === true;
+        if (result.isCorrect === true) fireConfetti('small');
 
         const good = result.isCorrect;
         document.getElementById('compFeedbackSlot').innerHTML = `
@@ -530,7 +531,7 @@
         if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
         else { window.location.href = 'dashboard.html'; }
       });
-      if (perfect) fireConfetti();
+      if (perfect) fireConfetti('big');
 
       if (passageId) {
         await db.from('input_completions').insert({
