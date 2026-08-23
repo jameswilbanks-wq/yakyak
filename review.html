@@ -62,19 +62,35 @@
       document.getElementById('goTalk').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
     }
 
-    // Pulls every open mistake — vocab/grammar misses from skill_mastery
-    // (incorrect_count > 0, not yet cleared) plus mispronounced words from
-    // pronunciation_mistakes — merges them into one due-first queue, capped
-    // so a session never feels endless.
+    // Pulls two kinds of due items into one queue:
+    //  - "mistake" source: skill_mastery rows actually missed at least once
+    //    and not yet graduated (incorrect_count > 0, mistake_cleared=false),
+    //    plus mispronounced words from pronunciation_mistakes. These use the
+    //    3-in-a-row graduation flow (recordMistakeReviewResult).
+    //  - "due" source: skill_mastery rows that were NEVER missed, or WERE
+    //    missed but already graduated (incorrect_count = 0 OR
+    //    mistake_cleared = true) — i.e. words the learner knows but whose
+    //    SM-2-style interval (see recordSkillResult) has come due again.
+    //    These are true spaced-repetition reviews, not mistake drills, so
+    //    they're graded with a plain recordSkillResult call and never show
+    //    graduation UI.
+    // The two conditions are mutually exclusive by construction (a row is
+    // either "an open mistake" or "not"), so there's no overlap to dedupe.
     async function loadQueue() {
       renderLoading();
       const nowIso = new Date().toISOString();
 
-      const [{ data: mistakes }, { data: pronRows }] = await Promise.all([
+      const [{ data: mistakes }, { data: dueReview }, { data: pronRows }] = await Promise.all([
         db.from('skill_mastery').select('*')
           .eq('user_id', user.id)
           .eq('mistake_cleared', false)
           .gt('incorrect_count', 0)
+          .lte('next_review_at', nowIso)
+          .order('next_review_at', { ascending: true })
+          .limit(12),
+        db.from('skill_mastery').select('*')
+          .eq('user_id', user.id)
+          .or('incorrect_count.eq.0,mistake_cleared.eq.true')
           .lte('next_review_at', nowIso)
           .order('next_review_at', { ascending: true })
           .limit(12),
@@ -88,24 +104,26 @@
       ]);
 
       const built = [];
-      for (const row of mistakes || []) {
+      async function pushSkillRow(row, source) {
         if (row.skill_type === 'grammar') {
           const { data: gp } = await db.from('grammar_points').select('*').eq('id', row.skill_ref_id).single();
           if (gp) built.push({
-            kind: 'grammar', skillRefId: row.skill_ref_id, front: gp.label, back: gp.description,
+            kind: 'grammar', source, skillRefId: row.skill_ref_id, front: gp.label, back: gp.description,
             passed: row.mistake_reviews_passed || 0, nextReviewAt: row.next_review_at,
           });
         } else {
           const { data: vi } = await db.from('vocab_items').select('*').eq('id', row.skill_ref_id).single();
           if (vi) built.push({
-            kind: 'vocab', skillRefId: row.skill_ref_id, vocabItem: vi, front: vi.target_text, back: vi.native_text,
+            kind: 'vocab', source, skillRefId: row.skill_ref_id, vocabItem: vi, front: vi.target_text, back: vi.native_text,
             passed: row.mistake_reviews_passed || 0, nextReviewAt: row.next_review_at,
           });
         }
       }
+      for (const row of mistakes || []) await pushSkillRow(row, 'mistake');
+      for (const row of dueReview || []) await pushSkillRow(row, 'due');
       for (const row of pronRows || []) {
         built.push({
-          kind: 'pronunciation', id: row.id, word: row.word, sentenceContext: row.sentence_context,
+          kind: 'pronunciation', source: 'mistake', id: row.id, word: row.word, sentenceContext: row.sentence_context,
           passed: row.correct_streak || 0, nextReviewAt: row.next_review_at,
         });
       }
@@ -131,6 +149,9 @@
     }
 
     function progressChip(item) {
+      if (item.source === 'due') {
+        return `<span class="chip-mini" style="background:var(--card-2);color:var(--text-faint);">${t('rv.dueLabel')}</span>`;
+      }
       return `<span class="chip-mini" style="background:var(--card-2);color:var(--text-faint);">${t('rv.passProgress', { n: item.passed })}</span>`;
     }
 
@@ -208,7 +229,18 @@
 
     async function gradeFlashcard(item, correct) {
       const skillType = item.kind === 'grammar' ? 'grammar' : 'vocab';
-      const { cleared } = await recordMistakeReviewResult(user.id, skillType, item.skillRefId, correct);
+      let cleared = false;
+      if (item.source === 'due') {
+        // A plain spaced-repetition review, not a mistake drill: just
+        // reschedule via the normal strength ladder. A miss here naturally
+        // reopens it as a real mistake (recordSkillResult resets
+        // mistake_cleared/mistake_reviews_passed on any incorrect answer),
+        // so it starts showing up in the mistake pipeline going forward —
+        // no separate "graduation" UI applies to a due-only review.
+        await recordSkillResult(user.id, skillType, item.skillRefId, correct);
+      } else {
+        ({ cleared } = await recordMistakeReviewResult(user.id, skillType, item.skillRefId, correct));
+      }
       reviewedCount++;
       if (correct) correctCount++;
       if (cleared) gradCount++;
@@ -406,6 +438,7 @@
           <div id="levelUpSlot" style="width:100%;"></div>
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rv.backToHome')}</button>
         </div>`;
+      if (reviewedCount > 0 && correctCount === reviewedCount) fireConfetti('big');
 
       await updateStreakAndActivity(user, profile, xpEarned, 'huddle');
       const newBadges = await checkAndAwardBadges(user, profile);

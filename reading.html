@@ -84,6 +84,7 @@
       renderLoading();
       try {
         const avoid = await fetchRecentValues('reading_passages', 'title', profile.target_language, profile.current_level, 8);
+        const reinforceWords = await getWeakWords(user.id, profile.target_language, 6);
         const token = await getAuthToken();
         const res = await fetch(GENERATE_EXTENSIVE_PASSAGE_URL, {
           method: 'POST',
@@ -95,6 +96,7 @@
             interest: sessionTopic || 'daily life',
             angle: randomAngle(),
             avoid,
+            reinforceWords,
           }),
         });
         const raw = await res.text();

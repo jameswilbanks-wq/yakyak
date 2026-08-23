@@ -53,6 +53,7 @@
       renderLoading();
       try {
         const avoid = await fetchRecentValues('lessons', 'title', profile.target_language, profile.current_level, 5);
+        const reinforceWords = await getWeakWords(user.id, profile.target_language, 6);
         const token = await getAuthToken();
         const res = await fetch(EDGE_FUNCTION_URL, {
           method: 'POST',
@@ -67,6 +68,7 @@
             interest: sessionTopic || 'daily life',
             angle: randomAngle(),
             avoid,
+            reinforceWords,
           }),
         });
         const raw = await res.text();

@@ -782,6 +782,53 @@ async function recordSkillResult(userId, skillType, skillRefId, correct) {
   await db.from('skill_mastery').upsert(row, { onConflict: 'user_id,skill_type,skill_ref_id' });
 }
 
+// --- Weak-word reinforcement (cross-lesson injection) --------------------
+// Every module that grades an answer already writes into skill_mastery via
+// recordSkillResult, which is real per-word data — how weak the learner is
+// on it (strength 0-5) and when it's next due. getWeakWords() is the other
+// half: any lesson-generation call site (vocab, translate, roleplay,
+// reading, listening, dialogue lessons) can pull "what is this learner
+// currently weak on" and pass it to its edge function as `reinforceWords`,
+// so a struggling word can resurface woven into a sentence in a totally
+// different exercise type instead of only ever showing up in Huddle Up.
+// Ranked weakest-first (lowest strength), then soonest-due as a tiebreak.
+// Best-effort — returns [] on any failure so generation is never blocked
+// waiting on this.
+async function getWeakWords(userId, targetLanguage, limit) {
+  const n = limit || 6;
+  try {
+    const { data: rows } = await db.from('skill_mastery')
+      .select('skill_ref_id, strength, next_review_at')
+      .eq('user_id', userId).eq('skill_type', 'vocab')
+      .order('strength', { ascending: true })
+      .order('next_review_at', { ascending: true })
+      .limit(n * 3); // overfetch: some rows may point at a different target_language's vocab_items
+    const ids = (rows || []).map(r => r.skill_ref_id).filter(Boolean);
+    if (!ids.length) return [];
+
+    const { data: items } = await db.from('vocab_items')
+      .select('id, target_text, native_text')
+      .eq('target_language', targetLanguage)
+      .in('id', ids);
+    if (!items || !items.length) return [];
+
+    const byId = new Map(items.map(i => [i.id, i]));
+    const seen = new Set();
+    const ordered = [];
+    for (const r of rows) {
+      const vi = byId.get(r.skill_ref_id);
+      if (vi && !seen.has(vi.id)) {
+        seen.add(vi.id);
+        ordered.push({ targetText: vi.target_text, nativeText: vi.native_text });
+      }
+      if (ordered.length >= n) break;
+    }
+    return ordered;
+  } catch (e) {
+    return [];
+  }
+}
+
 // --- Huddle Up: mistake review ------------------------------------------
 // Huddle Up (review.html) is deliberately scoped to actual mistakes only —
 // it queries skill_mastery/pronunciation_mistakes rows that have been

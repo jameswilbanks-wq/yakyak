@@ -28,6 +28,10 @@
     let maxTurns = 12;
     let user = null, profile = null, scenarios = [], scenario = null, sessionId = null, sessionTopic = null;
     let transcript = [], turnCount = 0, goalCompleted = false, grammarFlagged = [], busy = false;
+    // Fetched once per session (not per turn — no need to re-query on every
+    // message) and reused by both the scenario-picker call and every reply
+    // turn, so weak words can resurface across the whole conversation.
+    let reinforceWords = [];
     let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
 
     function planStepPrefix() {
@@ -63,6 +67,7 @@
       renderLoading(t('rp.scoutingConvos'));
       try {
         const avoid = await fetchRecentValues('roleplay_scenarios', 'title', profile.target_language, profile.current_level, 5);
+        reinforceWords = await getWeakWords(user.id, profile.target_language, 6);
         const token = await getAuthToken();
         const res = await fetch(ROLEPLAY_SCENARIOS_URL, {
           method: 'POST',
@@ -74,6 +79,7 @@
             interest: sessionTopic || 'daily life',
             angle: randomAngle(),
             avoid,
+            reinforceWords,
           }),
         });
         const raw = await res.text();
@@ -267,6 +273,7 @@
             goal: scenario.goal,
             transcript: transcript.slice(0, -1),
             userMessage: text,
+            reinforceWords,
           }),
         });
         const raw = await res.text();
@@ -327,6 +334,7 @@
           <div id="levelUpSlot" style="width:100%;"></div>
           <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('rp.backToHome')}</button>
         </div>`;
+      if (goalCompleted) fireConfetti('big');
       document.getElementById('doneBtn').addEventListener('click', () => {
         if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
         else { window.location.href = 'dashboard.html'; }
