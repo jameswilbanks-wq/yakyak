@@ -8,12 +8,12 @@ const TRANSLATE_GENERATE_URL = SUPABASE_URL + "/functions/v1/generate-translatio
 const TRANSLATE_GRADE_URL = SUPABASE_URL + "/functions/v1/grade-translation";
 const ROLEPLAY_SCENARIOS_URL = SUPABASE_URL + "/functions/v1/generate-roleplay-scenarios";
 const ROLEPLAY_REPLY_URL = SUPABASE_URL + "/functions/v1/roleplay-reply";
-const INPUT_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-input-passage";
 const GRADE_PRONUNCIATION_URL = SUPABASE_URL + "/functions/v1/grade-pronunciation";
 const EVALUATE_PROGRESS_URL = SUPABASE_URL + "/functions/v1/evaluate-progress";
 const GENERATE_VOCAB_URL = SUPABASE_URL + "/functions/v1/generate-vocab-batch";
 const GENERATE_PLAN_URL = SUPABASE_URL + "/functions/v1/generate-lesson-plan";
 const GENERATE_EXTENSIVE_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-extensive-passage";
+const GENERATE_READING_PASSAGE_URL = SUPABASE_URL + "/functions/v1/generate-reading-passage";
 const LEVEL_TEST_COACH_URL = SUPABASE_URL + "/functions/v1/level-test-coach";
 const GENERATE_COACH_CHECKIN_URL = SUPABASE_URL + "/functions/v1/generate-coach-checkin";
 const GENERATE_VOCAB_EXAMPLE_URL = SUPABASE_URL + "/functions/v1/generate-vocab-example";
@@ -377,12 +377,15 @@ async function getDailyCoachCheckin(user, profile) {
 // reading comprehension is 4-7); this feeds a holistic judgment call, not
 // an exact formula.
 async function gatherProgressStats(userId, targetLanguage) {
-  const [lessonsRes, transRes, inputRes, rpRes] = await Promise.all([
+  const [lessonsRes, transRes, readingRes, rpRes] = await Promise.all([
     db.from('lesson_completions').select('score, completed_at, lessons(level, target_language)')
       .eq('user_id', userId).order('completed_at', { ascending: false }).limit(8),
     db.from('translation_attempts').select('is_correct, attempted_at, translation_exercises(level, target_language)')
       .eq('user_id', userId).order('attempted_at', { ascending: false }).limit(10),
-    db.from('input_completions').select('score, pronunciation_avg, completed_at, input_passages(level, target_language)')
+    // Unified reading_completions covers both extensive (silent/Storybook)
+    // and intensive (mic-graded) reading — pronunciation_avg is only set
+    // for intensive rows, everything else folds in naturally either way.
+    db.from('reading_completions').select('score, pronunciation_avg, completed_at, reading_passages(level, target_language)')
       .eq('user_id', userId).order('completed_at', { ascending: false }).limit(8),
     db.from('roleplay_sessions').select('goal_completed, grammar_flagged, completed_at, roleplay_scenarios(level, target_language)')
       .eq('user_id', userId).eq('status', 'completed').order('completed_at', { ascending: false }).limit(8),
@@ -397,7 +400,7 @@ async function gatherProgressStats(userId, targetLanguage) {
 
   const lessons = byLang(lessonsRes.data, 'lessons');
   const translations = byLang(transRes.data, 'translation_exercises');
-  const reading = byLang(inputRes.data, 'input_passages');
+  const reading = byLang(readingRes.data, 'reading_passages');
   const roleplay = byLang(rpRes.data, 'roleplay_scenarios');
 
   return {
@@ -418,7 +421,7 @@ async function gatherProgressStats(userId, targetLanguage) {
         const scored = reading.filter(r => r.pronunciation_avg !== null && r.pronunciation_avg !== undefined);
         return scored.length ? Math.round(scored.reduce((s, r) => s + r.pronunciation_avg, 0) / scored.length) : null;
       })(),
-      levels: levelCounts(reading, 'input_passages'),
+      levels: levelCounts(reading, 'reading_passages'),
     },
     roleplay: {
       count: roleplay.length,
@@ -563,18 +566,21 @@ async function checkAndAwardBadges(user, profile) {
       Object.assign(profile, profileUpdate);
     }
 
-    const [existingRes, rpRes, icRes, rcRes, smRes] = await Promise.all([
+    const [existingRes, rpRes, rcRes, smRes] = await Promise.all([
       db.from('user_badges').select('badge_code').eq('user_id', user.id),
       db.from('roleplay_sessions').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'completed'),
-      db.from('input_completions').select('pronunciation_avg').eq('user_id', user.id),
-      db.from('reading_completions').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+      // Unified reading_completions covers both extensive and intensive
+      // reading, so both the "read a lot" and "pronounced well" badges
+      // come from the same query now.
+      db.from('reading_completions').select('pronunciation_avg').eq('user_id', user.id),
       db.from('skill_mastery').select('skill_type, correct_count').eq('user_id', user.id),
     ]);
 
     const earned = new Set((existingRes.data || []).map(r => r.badge_code));
     const chatterboxCount = rpRes.count || 0;
-    const quickEarCount = (icRes.data || []).filter(r => r.pronunciation_avg !== null && r.pronunciation_avg >= 90).length;
-    const bookwormCount = rcRes.count || 0;
+    const readingCompletionRows = rcRes.data || [];
+    const quickEarCount = readingCompletionRows.filter(r => r.pronunciation_avg !== null && r.pronunciation_avg >= 90).length;
+    const bookwormCount = readingCompletionRows.length;
     const smRows = smRes.data || [];
     const wordsmithCount = smRows.filter(r => r.skill_type === 'vocab').length;
     const grammarSleuthCount = smRows.filter(r => r.skill_type === 'grammar').reduce((s, r) => s + (r.correct_count || 0), 0);

@@ -28,7 +28,7 @@
       vocab: { icon: 'books', nameKey: 'db.vocabChip' },
       translate: { icon: 'letters', nameKey: 'db.translateDiagnose' },
       roleplay: { icon: 'speak', nameKey: 'db.naturalDialogChip' },
-      input: { icon: 'book', nameKey: 'db.listenRead' },
+      reading: { icon: 'owl', nameKey: 'db.readingChip' },
     };
 
     let user = null, profile = null, completionCount = 0, vocabProgress = { learned: 0, target: 1000 }, myBadgeCodes = [];
@@ -322,16 +322,6 @@
 
         <div class="card" style="margin-top:14px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <span class="icon-square">${icon('book', { size: 20 })}</span>
-            <span class="label" style="margin-bottom:0;">${t('db.listenRead')}</span>
-          </div>
-          <h2 style="font-size:20px;margin:0 0 4px;">${t('db.comprehensibleInput')}</h2>
-          <p class="text-dim" style="font-size:13.5px;margin-bottom:18px;">${t('db.shortPassage')}</p>
-          <button class="btn-primary" id="startInputBtn">${t('db.startReadingListening')}</button>
-        </div>
-
-        <div class="card" style="margin-top:14px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <span class="icon-square">${icon('owl', { size: 20 })}</span>
             <span class="label" style="margin-bottom:0;">${t('db.readingChip')}</span>
           </div>
@@ -370,7 +360,6 @@
       `;
       document.getElementById('startLessonBtn').addEventListener('click', () => { window.location.href = 'roleplay.html'; });
       document.getElementById('startTranslateBtn').addEventListener('click', () => { window.location.href = 'translate.html'; });
-      document.getElementById('startInputBtn').addEventListener('click', () => { window.location.href = 'input.html'; });
       document.getElementById('startReadingBtn').addEventListener('click', () => { window.location.href = 'reading.html'; });
       document.getElementById('startVocabBtn').addEventListener('click', () => { window.location.href = 'vocab.html'; });
       document.getElementById('startStudyGuideBtn').addEventListener('click', () => { window.location.href = 'study-guide.html'; });

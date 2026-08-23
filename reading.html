@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YakYak — Reading Library</title>
+<title>YakYak — Reading</title>
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -25,40 +25,92 @@
   <script src="supabase-client.js"></script>
   <script src="i18n.js"></script>
   <script>
+    // Unified Reading module — replaces the old reading.html ("Reading
+    // Library", extensive/Storybook) + input.html ("Listen & read",
+    // mic-graded intensive) with one entry point, one shared passage
+    // generator/table (generate-reading-passage / reading_passages /
+    // reading_completions), and one continuity pool so "avoid recently
+    // read titles" works across both instead of each module repeating the
+    // other's topics. See project docs for the pedagogy this is grounded
+    // in (comprehensible-input coverage targets, accountability via a real
+    // comprehension check, read-while-listening).
+    //
+    // `mode` picks which experience: 'extensive' (silent/Storybook, low
+    // stakes, narrator-on by default, ends in a light comprehension quiz)
+    // or 'intensive' (short passage, sentence-by-sentence, mic-graded
+    // pronunciation + per-sentence comprehension check — the old
+    // input.html flow, `kind` sub-selects reading vs listening).
     let user = null, profile = null, passage = null, passageId = null, sessionTopic = null;
-    let qIdx = 0, results = [];
+    let mode = null; // 'extensive' | 'intensive'
+    let kind = null; // 'reading' | 'listening' — intensive only
+    let planCtx = null; // { plan, step } if running as a lesson-plan step, else null
 
-    // Playback state for the read-along player. Speed and the translation
-    // toggle are remembered per-device via localStorage since they're pure
-    // display preferences, not anything that needs to sync across devices.
+    // --- extensive-mode state ---
+    let qIdx = 0, results = [];
     const READING_RATE = { normal: 0.95, slow: 0.6 };
     let speed = localStorage.getItem('yakyak_reading_speed') || 'normal';
     let translationOn = localStorage.getItem('yakyak_reading_translation') === '1';
-    // 'guided' = the original sentence-by-sentence, chunk-aligned, read-along
-    // mode. 'storybook' = continuous-paragraph, tap-any-word-to-look-it-up
-    // mode, styled like a real book (own AI-generated passages, not real
-    // copyrighted books). Same underlying passage data either way — the
-    // toggle just switches how it's rendered.
-    let mode = localStorage.getItem('yakyak_reading_mode') || 'guided';
+    // 'guided' = sentence-by-sentence, chunk-aligned, read-along mode.
+    // 'storybook' = continuous-paragraph, tap-any-word-to-look-it-up mode,
+    // styled like a real book. Same underlying passage either way — the
+    // toggle just switches how it's rendered. (Named subMode, not mode —
+    // `mode` at the top level is now extensive/intensive.)
+    let subMode = localStorage.getItem('yakyak_reading_mode') || 'guided';
     // Storybook's read-along narrator: reads the whole passage aloud,
-    // sentence by sentence, with a live word-by-word highlight — like a
-    // karaoke-style read-along video. Defaults on (that's the point of the
-    // feature) but stays a real per-device toggle since some learners want
-    // Storybook to stay a silent, tap-to-look-up-only reading mode.
+    // sentence by sentence, with a live word-by-word highlight. Defaults
+    // on (research-backed: reading-while-listening scaffolds comprehension
+    // and builds listening proficiency) but stays a real per-device toggle.
     let readerOn = localStorage.getItem('yakyak_reading_reader') !== '0';
     let isPlaying = false;
     let stopRequested = false;
-    // Bumped every time a fresh playAll()/playStoryAll() run starts. A
-    // switch between Guided <-> Storybook mid-playback calls stopPlayback()
-    // (which cancels speech) then immediately kicks off the other mode's
-    // own play loop. speechSynthesis.cancel() fires the *old* utterance's
-    // onend asynchronously, so the old loop's step() can still resolve
-    // after the new loop already reset stopRequested — without this token,
-    // that stale callback wrongly stomps isPlaying back to false right
-    // after the new narration has actually started. Each step() closure
-    // captures the session id it was created with and no-ops if a newer
-    // session has since started.
     let playSession = 0;
+
+    // --- intensive-mode state ---
+    let sIdx = 0, sentenceResults = [], playedOnce = false;
+    let recognition = null, isRecording = false;
+    let mediaRecorder = null, mediaStream = null, audioChunks = [], liveTranscript = '';
+    let activeMicBtn = null, activeHint = null, activeTargetText = null, activeOnGraded = null;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micSupported = !!SR;
+
+    function planStepPrefix() {
+      if (!planCtx) return '';
+      return t('pl.stepOfTotal', { i: planCtx.plan.currentIndex + 1, n: planCtx.plan.steps.length });
+    }
+
+    // --- Mode picker: Read & Listen vs Read Aloud & Check ---
+    function renderModePicker() {
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          <h1 style="font-size:24px;margin-bottom:6px;">${t('rl.pickModeTitle')}</h1>
+          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">${t('rl.pickModeDesc')}</p>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="row-option" id="pickExtensive"><span style="font-weight:700;">${icon('book', { size: 15 })} ${t('rl.modeExtensive')}</span><span class="text-faint" style="font-size:12.5px;">${t('rl.modeExtensiveDesc')}</span></button>
+            <button class="row-option" id="pickIntensive"><span style="font-weight:700;">${icon('mic', { size: 15 })} ${t('rl.modeIntensive')}</span><span class="text-faint" style="font-size:12.5px;">${t('rl.modeIntensiveDesc')}</span></button>
+          </div>
+        </div>`;
+      document.getElementById('pickExtensive').addEventListener('click', () => { mode = 'extensive'; kind = null; loadPassage(); });
+      document.getElementById('pickIntensive').addEventListener('click', () => { mode = 'intensive'; renderKindPicker(); });
+    }
+
+    // Reading vs listening sub-choice, only within intensive mode (ported
+    // from the old input.html topic-picker-adjacent screen).
+    function renderKindPicker() {
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          <h1 style="font-size:24px;margin-bottom:6px;">${t('in.listenOrRead')}</h1>
+          <p class="text-dim" style="font-size:14px;margin-bottom:20px;">${t('in.eitherWay')}</p>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="row-option" id="pickReading"><span style="font-weight:700;">${icon('book', { size: 15 })} ${t('in.reading')}</span><span class="text-faint" style="font-size:12.5px;">${t('in.seeItReadIt')}</span></button>
+            <button class="row-option" id="pickListening"><span style="font-weight:700;">${icon('headphones', { size: 15 })} ${t('in.listening')}</span><span class="text-faint" style="font-size:12.5px;">${t('in.hearItSayBack')}</span></button>
+          </div>
+          ${!micSupported ? `<p class="text-faint" style="font-size:11.5px;margin-top:16px;">${t('in.noMicSupport')}</p>` : ''}
+        </div>`;
+      document.getElementById('pickReading').addEventListener('click', () => { kind = 'reading'; loadPassage(); });
+      document.getElementById('pickListening').addEventListener('click', () => { kind = 'listening'; loadPassage(); });
+    }
 
     function renderLoading() {
       document.getElementById('readingBody').innerHTML = `
@@ -80,13 +132,17 @@
       document.getElementById('retryBtn').addEventListener('click', loadPassage);
     }
 
+    // Shared passage fetch for both modes — one continuity pool (the
+    // "avoid" list is drawn from the unified reading_passages table
+    // regardless of mode) so a learner doesn't get the same topic twice
+    // just because they switched modes.
     async function loadPassage() {
       renderLoading();
       try {
         const avoid = await fetchRecentValues('reading_passages', 'title', profile.target_language, profile.current_level, 8);
         const reinforceWords = await getWeakWords(user.id, profile.target_language, 6);
         const token = await getAuthToken();
-        const res = await fetch(GENERATE_EXTENSIVE_PASSAGE_URL, {
+        const res = await fetch(GENERATE_READING_PASSAGE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({
@@ -97,39 +153,47 @@
             angle: randomAngle(),
             avoid,
             reinforceWords,
+            mode,
+            kind,
           }),
         });
         const raw = await res.text();
         if (!raw) throw new Error('Empty response (HTTP ' + res.status + ')');
         const data = JSON.parse(raw);
         if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
-        if (!data.sentences || !data.sentences.length || !data.questions || !data.questions.length) throw new Error('No passage returned');
+        if (!data.sentences || !data.sentences.length) throw new Error('No passage returned');
+        if (mode === 'extensive' && (!data.questions || !data.questions.length)) throw new Error('No passage returned');
         passage = data;
 
         const { data: row } = await db.from('reading_passages').insert({
           target_language: profile.target_language,
           native_language: profile.native_language,
           level: profile.current_level,
+          mode,
+          kind: mode === 'intensive' ? kind : null,
           title: data.title,
           body: data.body,
-          comprehension_questions: data.questions,
+          sentences: data.sentences,
+          comprehension_questions: data.questions || [],
           interest_tag: sessionTopic || null,
         }).select('id').single();
         passageId = row ? row.id : null;
 
-        renderPassage();
+        if (mode === 'extensive') {
+          renderPassage();
+        } else {
+          sIdx = 0;
+          sentenceResults = [];
+          renderReadStep();
+        }
       } catch (e) {
         renderError(e.message || 'Unknown error');
       }
     }
 
-    // --- Read-along player: per-sentence TTS with live word highlighting ---
-    // One SpeechSynthesisUtterance per sentence (not the whole passage) so
-    // the browser's onboundary word-timing events stay reliable, and so a
-    // learner can replay just one sentence. Highlighting quality depends on
-    // the browser/voice actually firing word boundaries (Chrome does;
-    // support elsewhere varies) — if it doesn't fire, the sentence still
-    // reads aloud fine, it just won't visibly highlight.
+    // ============================================================
+    // Extensive mode: Guided (sentence rows) / Storybook (tap-to-look-up)
+    // ============================================================
 
     function sentenceToSpansHTML(text) {
       let html = '';
@@ -145,11 +209,9 @@
       return html;
     }
 
-    // sentenceToChunkedSpansHTML and wireChunkHover now live in
+    // sentenceToChunkedSpansHTML and wireChunkHover live in
     // supabase-client.js (shared with vocab.html's example-sentence
-    // hover-align). Word char-offsets are computed against the same
-    // single-space-joined string the server built sentence.target from, so
-    // TTS highlighting below still lines up exactly.
+    // hover-align).
 
     function highlightWordAt(sentenceEl, charIndex) {
       const spans = sentenceEl.querySelectorAll('.rl-word');
@@ -204,33 +266,33 @@
       step(0);
     }
 
-    // Dispatches to whichever mode is active. Both modes share the exact
+    // Dispatches to whichever sub-mode is active. Both share the exact
     // same loaded `passage` — switching the toggle just re-renders, it
     // never re-fetches.
     function renderPassage() {
       stopPlayback();
-      if (mode === 'storybook') renderStorybook(); else renderGuided();
+      if (subMode === 'storybook') renderStorybook(); else renderGuided();
     }
 
     function modeToggleHTML() {
       return `
         <div style="display:flex;gap:6px;margin-bottom:10px;">
-          <button class="chip${mode === 'guided' ? ' active' : ''}" id="modeGuidedBtn" style="padding:4px 10px;font-size:12px;">${t('rl.guided')}</button>
-          <button class="chip${mode === 'storybook' ? ' active' : ''}" id="modeStorybookBtn" style="padding:4px 10px;font-size:12px;">${t('rl.storybook')}</button>
+          <button class="chip${subMode === 'guided' ? ' active' : ''}" id="modeGuidedBtn" style="padding:4px 10px;font-size:12px;">${t('rl.guided')}</button>
+          <button class="chip${subMode === 'storybook' ? ' active' : ''}" id="modeStorybookBtn" style="padding:4px 10px;font-size:12px;">${t('rl.storybook')}</button>
         </div>`;
     }
 
     function wireModeToggle() {
       document.getElementById('modeGuidedBtn').addEventListener('click', () => {
-        if (mode === 'guided') return;
-        mode = 'guided';
-        localStorage.setItem('yakyak_reading_mode', mode);
+        if (subMode === 'guided') return;
+        subMode = 'guided';
+        localStorage.setItem('yakyak_reading_mode', subMode);
         renderPassage();
       });
       document.getElementById('modeStorybookBtn').addEventListener('click', () => {
-        if (mode === 'storybook') return;
-        mode = 'storybook';
-        localStorage.setItem('yakyak_reading_mode', mode);
+        if (subMode === 'storybook') return;
+        subMode = 'storybook';
+        localStorage.setItem('yakyak_reading_mode', subMode);
         renderPassage();
       });
     }
@@ -295,36 +357,22 @@
       wireChunkHover();
     }
 
-    // --- Storybook mode: continuous paragraphs, tap any word to look it up ---
-    // Same passage.sentences data as Guided mode, just flowed together as
-    // prose instead of one row per sentence, with no chunk-hover/translation
-    // controls — the point is to read like a real book. Every word is its
-    // own tappable span; tapping opens a lookup card (translation +
-    // phonetic + audio) via getOrCreateWordLookup, with "I know it" (just
-    // dismiss) and "Learn →" (adds it to the same skill_mastery mistake
-    // queue Huddle Up reviews) actions.
-    function sentenceToTapSpansHTML(text, sIdx) {
+    function sentenceToTapSpansHTML(text, sIdxLocal) {
       let html = '';
       let last = 0;
       const regex = /[\p{L}\p{M}'’-]+/gu;
       let m;
       while ((m = regex.exec(text))) {
         html += escapeHtml(text.slice(last, m.index));
-        html += `<span class="sb-word" data-word="${escapeHtml(m[0])}" data-sidx="${sIdx}" data-start="${m.index}">${escapeHtml(m[0])}</span>`;
+        html += `<span class="sb-word" data-word="${escapeHtml(m[0])}" data-sidx="${sIdxLocal}" data-start="${m.index}">${escapeHtml(m[0])}</span>`;
         last = m.index + m[0].length;
       }
       html += escapeHtml(text.slice(last));
       return html;
     }
 
-    // --- Storybook's read-along narrator -------------------------------
-    // Same one-utterance-per-sentence approach as Guided's playSentence,
-    // just scoped to .sb-word spans (keyed by sentence index + char offset,
-    // same offsets sentenceToTapSpansHTML() just wired up) instead of
-    // Guided's .rl-word spans, since Storybook flows every sentence
-    // together as continuous prose rather than one row per sentence.
-    function highlightStoryWordAt(sIdx, charIndex) {
-      const spans = document.querySelectorAll(`.sb-word[data-sidx="${sIdx}"]`);
+    function highlightStoryWordAt(sIdxLocal, charIndex) {
+      const spans = document.querySelectorAll(`.sb-word[data-sidx="${sIdxLocal}"]`);
       let target = null;
       spans.forEach(s => {
         s.classList.remove('sb-word-active');
@@ -401,8 +449,8 @@
       });
       document.querySelectorAll('.sb-word').forEach(el => el.addEventListener('click', () => {
         stopPlayback();
-        const sIdx = parseInt(el.dataset.sidx, 10);
-        openWordLookup(el.dataset.word, passage.sentences[sIdx] ? passage.sentences[sIdx].target : '');
+        const sIdxLocal = parseInt(el.dataset.sidx, 10);
+        openWordLookup(el.dataset.word, passage.sentences[sIdxLocal] ? passage.sentences[sIdxLocal].target : '');
       }));
       document.getElementById('doneReadingBtn').addEventListener('click', () => { stopPlayback(); startQuestions(); });
 
@@ -415,9 +463,6 @@
           stopPlayback();
           renderStorybook();
         }));
-        // Reader on means the passage narrates itself whenever Storybook is
-        // showing — same "walks in already reading" feel as the read-along
-        // reference video, not a silent page waiting to be pressed play.
         playStoryAll();
       }
     }
@@ -449,7 +494,7 @@
           word, sentenceContext, langByCode(profile.target_language).name, profile.native_language, profile.current_level
         );
         vocabItemId = result.vocabItemId;
-        if (!overlay.isConnected) return; // closed before the lookup finished
+        if (!overlay.isConnected) return;
         document.getElementById('wordPhonetic').textContent = result.phonetic || '';
         document.getElementById('wordTranslation').textContent = result.translation || '—';
         document.getElementById('wordKnowBtn').disabled = false;
@@ -515,14 +560,17 @@
           <h2 style="font-size:24px;margin:14px 0 4px;">${t('rl.passageComplete')}</h2>
           <p class="text-dim" style="font-size:14.5px;">${t('rl.correctOfTotal', { c: correctCount, t: results.length })}</p>
           <div id="levelUpSlot" style="width:100%;"></div>
-          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${t('rl.backToHome')}</button>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('rl.backToHome')}</button>
         </div>`;
-      document.getElementById('doneBtn').addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+      document.getElementById('doneBtn').addEventListener('click', () => {
+        if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
+        else { window.location.href = 'dashboard.html'; }
+      });
       if (perfect) fireConfetti('big');
 
       if (passageId) {
         await db.from('reading_completions').insert({
-          user_id: user.id, passage_id: passageId, score: correctCount, xp_earned: xpEarned,
+          user_id: user.id, passage_id: passageId, score: correctCount, xp_earned: xpEarned, mode: 'extensive',
         });
       }
 
@@ -533,7 +581,422 @@
       document.getElementById('levelUpSlot').innerHTML = (levelUp ? celebrationHTML(levelUp) : '') + badgesEarnedHTML(newBadges);
     }
 
-    document.getElementById('exitBtn').addEventListener('click', () => { stopPlayback(); window.location.href = 'dashboard.html'; });
+    // ============================================================
+    // Intensive mode: sentence-by-sentence, mic-graded (ported from the
+    // old input.html)
+    // ============================================================
+
+    function renderProgress() {
+      const total = passage.sentences.length;
+      return `<div class="sentence-progress" style="margin-bottom:16px;">${passage.sentences.map((_, i) =>
+        `<div class="seg${i < sIdx ? ' done' : i === sIdx ? ' current' : ''}"></div>`).join('')}</div>`;
+    }
+
+    function renderReadStep() {
+      playedOnce = false;
+      isRecording = false;
+      const sentence = passage.sentences[sIdx];
+      const tts = langByCode(profile.target_language).tts;
+      document.getElementById('topLabel').textContent = planStepPrefix() + t('in.sentenceOfTotal', { i: sIdx + 1, n: passage.sentences.length });
+
+      const showText = kind === 'reading';
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          ${renderProgress()}
+          <span class="chip-mini">${kind === 'listening' ? t('in.listenSayBack') : t('in.readAloud')}</span>
+          <div class="card" style="margin-top:14px;min-height:90px;display:flex;align-items:center;justify-content:center;text-align:center;">
+            ${showText
+              ? `<p style="font-size:19px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>`
+              : `<div id="listenSlot">
+                   <button class="btn-primary" id="playBtn">${t('in.playSentence')}</button>
+                   <p class="text-faint" style="font-size:11.5px;margin-top:10px;">${t('in.tapPlayListen')}</p>
+                 </div>`}
+          </div>
+          <div style="margin-top:28px;text-align:center;" id="micArea">
+            ${micSupported ? `
+              <button class="mic-btn" id="micBtn" ${showText ? '' : 'disabled'}>${icon('mic')}</button>
+              <p class="text-faint" style="font-size:12px;margin-top:10px;" id="micHint">${showText ? t('in.tapAndRead') : t('in.playFirst')}</p>
+            ` : `
+              <button class="btn-primary" id="skipMicBtn">${t('in.continueArrow')}</button>
+              <p class="text-faint" style="font-size:11.5px;margin-top:10px;">${t('in.pronScoringUnavailable')}</p>
+            `}
+          </div>
+        </div>`;
+
+      if (!showText) {
+        document.getElementById('playBtn').addEventListener('click', () => {
+          speak(sentence.target, tts);
+          playedOnce = true;
+          const micBtn = document.getElementById('micBtn');
+          if (micBtn) {
+            micBtn.disabled = false;
+            document.getElementById('micHint').textContent = t('in.nowTapSay');
+          }
+        });
+      }
+
+      if (micSupported) {
+        document.getElementById('micBtn').addEventListener('click', () => {
+          const micBtn = document.getElementById('micBtn');
+          const hint = document.getElementById('micHint');
+          toggleRecording(micBtn, hint, sentence.target, (transcript, audioURL) => gradePronunciation(sentence.target, transcript, audioURL));
+        });
+      } else {
+        document.getElementById('skipMicBtn').addEventListener('click', () => {
+          sentenceResults[sIdx] = { pronScore: null, pronFeedback: null };
+          renderComprehendStep();
+        });
+      }
+    }
+
+    async function toggleRecording(micBtn, hint, targetText, onGraded) {
+      if (isRecording) {
+        stopRecording();
+        return;
+      }
+      await startRecording(micBtn, hint, targetText, onGraded);
+    }
+
+    async function startRecording(micBtn, hint, targetText, onGraded) {
+      const tts = langByCode(profile.target_language).tts;
+      audioChunks = [];
+      liveTranscript = '';
+      activeMicBtn = micBtn;
+      activeHint = hint;
+      activeTargetText = targetText;
+      activeOnGraded = onGraded;
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        hint.textContent = t('in.micPermissionError');
+        return;
+      }
+
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.start();
+
+      recognition = new SR();
+      recognition.lang = tts;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (e) => {
+        let tr = '';
+        for (let i = 0; i < e.results.length; i++) tr += e.results[i][0].transcript;
+        liveTranscript = tr;
+      };
+      recognition.onerror = () => {};
+      recognition.start();
+
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.innerHTML = icon('mic');
+      hint.textContent = t('in.recordingTapStop');
+    }
+
+    function stopRecording() {
+      const micBtn = activeMicBtn;
+      const hint = activeHint;
+      const targetText = activeTargetText;
+      const onGraded = activeOnGraded;
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micBtn.innerHTML = icon('mic');
+      micBtn.disabled = true;
+      hint.textContent = t('in.processing');
+
+      let recognitionDone = false, recorderDone = false, audioURL = null;
+      const maybeFinish = () => {
+        if (recognitionDone && recorderDone) onGraded(liveTranscript, audioURL);
+      };
+
+      if (recognition) {
+        recognition.onend = () => { recognitionDone = true; maybeFinish(); };
+        try { recognition.stop(); } catch (e) { recognitionDone = true; maybeFinish(); }
+      } else {
+        recognitionDone = true;
+      }
+
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+          audioURL = URL.createObjectURL(blob);
+          if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+          recorderDone = true;
+          maybeFinish();
+        };
+        try { mediaRecorder.stop(); } catch (e) { recorderDone = true; maybeFinish(); }
+      } else {
+        recorderDone = true;
+      }
+    }
+
+    async function gradePronunciation(targetSentence, transcript, audioURL) {
+      document.getElementById('micArea').innerHTML = `
+        <div class="lesson-center" style="padding:10px 0;">
+          <div id="mascotSlot" style="width:36px;"></div>
+          <p class="text-dim" style="margin-top:10px;font-size:13px;">${t('in.gradingReading')}</p>
+        </div>`;
+      document.getElementById('mascotSlot').innerHTML = mascotHTML(36);
+
+      let result;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GRADE_PRONUNCIATION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetSentence,
+            transcript,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+          }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        result = data;
+      } catch (e) {
+        result = { score: null, isGood: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.', missedWords: [] };
+      }
+
+      const missedWords = Array.isArray(result.missedWords) ? result.missedWords : [];
+      sentenceResults[sIdx] = {
+        pronScore: result.score,
+        pronFeedback: result.feedback,
+        heard: transcript,
+        audioURL,
+        missedWords,
+        wordPractice: {},
+      };
+      renderPronFeedback();
+
+      if (missedWords.length) recordPronunciationMistakes(user.id, profile.target_language, missedWords, targetSentence);
+    }
+
+    async function gradeWordPronunciation(word, transcript, audioURL, words, tts) {
+      const r = sentenceResults[sIdx];
+      let result;
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(GRADE_PRONUNCIATION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            targetSentence: word,
+            transcript,
+            targetLanguage: langByCode(profile.target_language).name,
+            nativeLanguage: profile.native_language,
+          }),
+        });
+        const raw = await res.text();
+        const data = JSON.parse(raw);
+        if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+        result = data;
+      } catch (e) {
+        result = { score: null, isGood: null, feedback: '' };
+      }
+      r.wordPractice[word] = { score: result.score, audioURL };
+      renderWordPracticeList(words, tts);
+    }
+
+    function renderPronFeedback() {
+      const sentence = passage.sentences[sIdx];
+      const r = sentenceResults[sIdx];
+      const tts = langByCode(profile.target_language).tts;
+      const good = r.pronScore === null ? null : r.pronScore >= 75;
+      const missedWords = (r.missedWords || []).slice(0, 4);
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          ${renderProgress()}
+          <div style="display:flex;align-items:center;gap:14px;">
+            ${r.pronScore !== null ? `<div class="score-badge ${good ? 'good' : 'bad'}">${r.pronScore}</div>` : ''}
+            <div>
+              <p style="font-weight:800;">${r.pronScore === null ? t('in.skipped') : good ? t('in.niceReading') : t('in.worthAnotherLook')}</p>
+              <p class="text-dim" style="font-size:13px;margin-top:2px;">${r.pronFeedback || ''}</p>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px;">
+            <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
+            ${r.heard ? `<p class="text-faint" style="font-size:12px;margin-top:8px;">${t('in.weHeard')} "${r.heard}"</p>` : ''}
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;">
+            <button class="btn-ghost" id="hearCorrectBtn">${t('in.hearCorrect')}</button>
+            ${r.audioURL ? `<button class="btn-ghost" id="hearMineBtn">${t('in.hearMine')}</button>` : ''}
+          </div>
+          ${missedWords.length ? `
+            <div class="card" style="margin-top:18px;">
+              <span class="label" style="margin-bottom:4px;">${t('in.wordsToPractice')}</span>
+              <div id="wordPracticeList"></div>
+            </div>` : ''}
+          <div style="display:flex;gap:10px;margin-top:22px;">
+            <button class="btn-ghost" id="retryReadBtn">${t('in.retry')}</button>
+            <button class="btn-primary" id="toComprehendBtn" style="flex:1;justify-content:center;">${t('in.continueArrow')}</button>
+          </div>
+        </div>`;
+      document.getElementById('hearCorrectBtn').addEventListener('click', () => speak(sentence.target, tts));
+      if (r.audioURL) {
+        document.getElementById('hearMineBtn').addEventListener('click', () => { new Audio(r.audioURL).play(); });
+      }
+      document.getElementById('retryReadBtn').addEventListener('click', renderReadStep);
+      document.getElementById('toComprehendBtn').addEventListener('click', renderComprehendStep);
+
+      if (missedWords.length) renderWordPracticeList(missedWords, tts);
+    }
+
+    function renderWordPracticeList(words, tts) {
+      const r = sentenceResults[sIdx];
+      const list = document.getElementById('wordPracticeList');
+      if (!list) return;
+      list.innerHTML = words.map((w, i) => {
+        const wp = r.wordPractice[w];
+        const passed = wp && wp.score !== null && wp.score >= 75;
+        const scoreNote = passed
+          ? `<span class="text-faint" style="font-size:11.5px;color:var(--mint);">${icon('check', { size: 11 })} ${t('in.wordPassed')}</span>`
+          : (wp && wp.score !== null ? `<span class="text-faint" style="font-size:11.5px;">${wp.score}</span>` : '');
+        return `
+          <div class="word-practice-row">
+            <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+              <span style="font-weight:700;font-family:var(--font-display);font-size:15px;">${w}</span>
+              ${scoreNote}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button class="btn-ghost" data-word-hear="${i}" style="padding:4px 10px;font-size:12px;">${icon('speaker', { size: 14 })}</button>
+              ${micSupported ? `<button class="mic-btn-sm" data-word-mic="${i}">${icon('mic', { size: 14 })}</button>` : ''}
+            </div>
+          </div>
+          ${micSupported ? `<p class="text-faint" id="wordHint${i}" style="font-size:11px;margin:2px 0 6px;">${t('in.wordRecordHint')}</p>` : ''}
+        `;
+      }).join('');
+
+      words.forEach((w, i) => {
+        list.querySelector(`[data-word-hear="${i}"]`).addEventListener('click', () => speak(w, tts));
+        const micBtn = list.querySelector(`[data-word-mic="${i}"]`);
+        if (micBtn) {
+          const hint = document.getElementById('wordHint' + i);
+          micBtn.addEventListener('click', () => {
+            toggleRecording(micBtn, hint, w, (transcript, audioURL) => gradeWordPronunciation(w, transcript, audioURL, words, tts));
+          });
+        }
+      });
+    }
+
+    function renderComprehendStep() {
+      const sentence = passage.sentences[sIdx];
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-body">
+          ${renderProgress()}
+          <div class="card" style="margin-bottom:18px;">
+            <p style="font-size:16px;font-weight:700;font-family:var(--font-display);">${sentence.target}</p>
+          </div>
+          <label class="label">${t('in.whatDoesMean', { lang: nativeLangDisplay(profile.native_language) })}</label>
+          <textarea id="compInput" class="input" rows="3" style="resize:none;" placeholder="${t('in.typeHere')}"></textarea>
+          <button class="btn-primary" id="compSubmitBtn" style="margin-top:18px;width:100%;justify-content:center;" disabled>${t('in.check')}</button>
+          <div id="compFeedbackSlot" style="margin-top:16px;"></div>
+        </div>`;
+
+      const input = document.getElementById('compInput');
+      const submitBtn = document.getElementById('compSubmitBtn');
+      let submitted = false;
+      input.addEventListener('input', () => { submitBtn.disabled = input.value.trim().length === 0; });
+      submitBtn.addEventListener('click', async () => {
+        if (submitted) { nextSentence(); return; }
+        const answer = input.value.trim();
+        submitBtn.disabled = true;
+        submitBtn.textContent = t('in.checking');
+        input.disabled = true;
+
+        let result;
+        try {
+          const token = await getAuthToken();
+          const res = await fetch(TRANSLATE_GRADE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({
+              sourceText: sentence.target,
+              expectedText: sentence.native,
+              userAnswer: answer,
+              targetLanguage: langByCode(profile.target_language).name,
+              nativeLanguage: profile.native_language,
+              grammarLabel: passage.title,
+            }),
+          });
+          const raw = await res.text();
+          const data = JSON.parse(raw);
+          if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+          result = data;
+        } catch (e) {
+          result = { isCorrect: null, feedback: "Couldn't reach the grader (" + (e.message || 'error') + '). Moving on.' };
+        }
+
+        submitted = true;
+        sentenceResults[sIdx].comprehensionCorrect = result.isCorrect === true;
+        if (result.isCorrect === true) fireConfetti('small');
+
+        const good = result.isCorrect;
+        document.getElementById('compFeedbackSlot').innerHTML = `
+          <div class="feedback-box ${good === null ? '' : good ? 'correct' : 'wrong'}">
+            <p style="font-weight:800;">${good === null ? t('in.skipped') : good ? t('in.gotIt') : t('in.notQuite')}</p>
+            <p class="text-dim" style="font-size:13.5px;margin-top:4px;">${result.feedback || ''}</p>
+            <p class="text-faint" style="font-size:12px;margin-top:8px;">${t('in.fullMeaning')} <b style="color:var(--text);">${sentence.native}</b></p>
+          </div>
+          ${grammarLessonHTML(result)}`;
+        saveGrammarLesson(user.id, profile.target_language, profile.current_level, result);
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = sIdx + 1 < passage.sentences.length ? t('in.nextSentence') : t('in.finish');
+      });
+    }
+
+    function nextSentence() {
+      if (sIdx + 1 < passage.sentences.length) { sIdx++; renderReadStep(); }
+      else finish();
+    }
+
+    async function finish() {
+      const scored = sentenceResults.filter(r => r.pronScore !== null && r.pronScore !== undefined);
+      const avgPron = scored.length ? Math.round(scored.reduce((s, r) => s + r.pronScore, 0) / scored.length) : null;
+      const compCorrect = sentenceResults.filter(r => r.comprehensionCorrect).length;
+      const total = sentenceResults.length;
+      const perfect = total > 0 && compCorrect === total && (avgPron === null || avgPron >= 100);
+      const xpEarned = 15 + compCorrect * 8 + (avgPron !== null ? Math.round(avgPron / 10) : 0);
+
+      document.getElementById('topLabel').textContent = '';
+      document.getElementById('readingBody').innerHTML = `
+        <div class="lesson-center">
+          <div style="color:${perfect ? 'var(--mint)' : 'var(--dark)'};">${icon(perfect ? 'confetti' : 'trophy', { size: 40 })}</div>
+          <h2 style="font-size:24px;margin:14px 0 4px;">${t('in.niceWorkTitle')}</h2>
+          <p class="text-dim" style="font-size:14.5px;">${t('in.understoodOfTotal', { c: compCorrect, t: total })}${avgPron !== null ? ` · ${t('in.pronAvg', { n: avgPron })}` : ''}</p>
+          <div id="levelUpSlot" style="width:100%;"></div>
+          <button class="btn-primary" id="doneBtn" style="margin-top:20px;">${planCtx ? t('pl.continuePlan') : t('in.backToHome')}</button>
+        </div>`;
+      document.getElementById('doneBtn').addEventListener('click', () => {
+        if (planCtx) { window.location.href = advancePlanAndGetNextUrl(planCtx.plan, xpEarned); }
+        else { window.location.href = 'dashboard.html'; }
+      });
+      if (perfect) fireConfetti('big');
+
+      if (passageId) {
+        await db.from('reading_completions').insert({
+          user_id: user.id, passage_id: passageId, score: compCorrect, xp_earned: xpEarned, pronunciation_avg: avgPron, mode: 'intensive',
+        });
+      }
+      await updateStreakAndActivity(user, profile, xpEarned, 'reading');
+
+      const levelUp = await recordActivityAndMaybeEvaluate(user, profile);
+      const newBadges = await checkAndAwardBadges(user, profile);
+      document.getElementById('levelUpSlot').innerHTML = (levelUp ? celebrationHTML(levelUp) : '') + badgesEarnedHTML(newBadges);
+    }
+
+    document.getElementById('exitBtn').addEventListener('click', () => {
+      stopPlayback();
+      if (recognition) { try { recognition.stop(); } catch (e) {} }
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') { try { mediaRecorder.stop(); } catch (e) {} }
+      if (mediaStream) { try { mediaStream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+      window.location.href = 'dashboard.html';
+    });
 
     (async () => {
       user = await requireAuth();
@@ -541,15 +1004,27 @@
       profile = await getProfile(user.id);
       if (!profile || !profile.name) { window.location.href = 'onboarding.html'; return; }
       setLocale(profile.native_language);
+      planCtx = isPlanStepActive('reading');
       document.getElementById('topLabel').textContent = '';
-      renderTopicPicker(document.getElementById('readingBody'), {
-        initial: getLastTopics(profile),
-        onStart: async (selection) => {
-          await saveLastTopics(user.id, selection);
-          sessionTopic = pickTopicForSession(selection);
-          loadPassage();
-        },
-      });
+      if (planCtx) {
+        // Plan mode skips the topic picker and mode/kind pickers,
+        // randomizing both for variety (mirrors the old input.html's
+        // reading/listening randomization, now extended to extensive vs
+        // intensive too).
+        sessionTopic = pickTopicForSession(getLastTopics(profile));
+        mode = Math.random() < 0.5 ? 'extensive' : 'intensive';
+        kind = mode === 'intensive' ? (Math.random() < 0.5 ? 'reading' : 'listening') : null;
+        loadPassage();
+      } else {
+        renderTopicPicker(document.getElementById('readingBody'), {
+          initial: getLastTopics(profile),
+          onStart: async (selection) => {
+            await saveLastTopics(user.id, selection);
+            sessionTopic = pickTopicForSession(selection);
+            renderModePicker();
+          },
+        });
+      }
     })();
   </script>
 </body>
